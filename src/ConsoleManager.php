@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Console\Kit;
 
+use Cbox\Console\Kit\Branding\Branding;
+use Cbox\Console\Kit\Contracts\BrandingResolver;
 use Cbox\Console\Kit\Contracts\CurrentContext;
 use Cbox\Console\Kit\Contracts\FeatureRegistry;
 use Cbox\Console\Kit\Contracts\NavRegistry;
@@ -13,7 +15,7 @@ use Closure;
 /**
  * The one entry point a plugin registers into (`Console::nav()`, `Console::features()`,
  * `Console::slots()`, `Console::dashboardCard()`) and the host reads from when it
- * renders its shell. A thin facade over the three registries.
+ * renders its shell. A thin facade over the registries.
  */
 final class ConsoleManager
 {
@@ -25,6 +27,7 @@ final class ConsoleManager
         private readonly FeatureRegistry $features,
         private readonly SlotRegistry $slots,
         private readonly CurrentContext $context,
+        private readonly BrandingResolver $branding,
     ) {}
 
     public function nav(): NavRegistry
@@ -36,6 +39,17 @@ final class ConsoleManager
     public function context(): CurrentContext
     {
         return $this->context;
+    }
+
+    /**
+     * The branding the shell should render for the current request — a per-tenant
+     * palette/logo/app-name a white-label plugin contributes, or an EMPTY
+     * {@see Branding} (static CSS) when none is bound. Resolved fresh each call so it
+     * tracks the current tenant. Echoed via `@consoleBrandingStyle`.
+     */
+    public function branding(): Branding
+    {
+        return $this->branding->resolve();
     }
 
     public function features(): FeatureRegistry

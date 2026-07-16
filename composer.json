@@ -1,7 +1,7 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
     "name": "cboxdk/laravel-console-kit",
-    "description": "Extension hooks for a Cbox admin console — nav areas, feature gates, UI slots and dashboard cards that an optional package registers into via composer, with zero host edits. The plugin pattern behind billing and other drop-in modules.",
+    "description": "Extension hooks for a Cbox admin console — nav areas, feature gates, UI slots, dashboard cards and per-tenant branding that an optional package registers into via composer, with zero host edits. The plugin pattern behind billing and other drop-in modules.",
     "keywords": ["cbox", "console", "admin", "plugin", "extension", "laravel"],
     "type": "library",
     "license": "MIT",

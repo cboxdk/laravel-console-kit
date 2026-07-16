@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Cbox\Console\Kit\Nav;
 
+use Cbox\Console\Kit\Contracts\FeatureRegistry;
+
 /**
  * A single page (a leaf) inside a nav area. `feature`, when set, gates the page: it
- * shows only when that feature is {@see \Cbox\Console\Kit\Contracts\FeatureRegistry::active()}.
+ * shows only when that feature is {@see FeatureRegistry::active()}.
  */
 final class NavPage
 {
