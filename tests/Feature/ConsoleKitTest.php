@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Cbox\Console\Kit\ConsoleManager;
+use Cbox\Console\Kit\Contracts\CurrentContext;
 use Cbox\Console\Kit\Facades\Console;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Route;
@@ -67,6 +68,35 @@ it('renders a slot through the @consoleSlot directive', function (): void {
     Console::slots()->add('x', fn (): string => 'HELLO');
 
     expect(trim(Blade::render("@consoleSlot('x')")))->toBe('HELLO');
+});
+
+it('resolves a null current context by default', function (): void {
+    expect(app(ConsoleManager::class)->context()->organizationId())->toBeNull()
+        ->and(app(ConsoleManager::class)->context()->isAdmin())->toBeFalse();
+});
+
+it('honours a host-bound current context', function (): void {
+    app()->instance(CurrentContext::class, new class implements CurrentContext
+    {
+        public function organizationId(): ?string
+        {
+            return 'org_1';
+        }
+
+        public function userId(): ?string
+        {
+            return 'user_1';
+        }
+
+        public function isAdmin(): bool
+        {
+            return true;
+        }
+    });
+    app()->forgetInstance(ConsoleManager::class);
+
+    expect(app(ConsoleManager::class)->context()->organizationId())->toBe('org_1')
+        ->and(app(ConsoleManager::class)->context()->isAdmin())->toBeTrue();
 });
 
 it('guards a route with the console.feature middleware', function (): void {

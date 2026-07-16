@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cbox\Console\Kit;
 
+use Cbox\Console\Kit\Context\NullCurrentContext;
+use Cbox\Console\Kit\Contracts\CurrentContext;
 use Cbox\Console\Kit\Contracts\FeatureRegistry;
 use Cbox\Console\Kit\Contracts\NavRegistry;
 use Cbox\Console\Kit\Contracts\SlotRegistry;
@@ -25,10 +27,14 @@ final class ConsoleKitServiceProvider extends ServiceProvider
         $this->app->singleton(FeatureRegistry::class, DefaultFeatureRegistry::class);
         $this->app->singleton(SlotRegistry::class, DefaultSlotRegistry::class);
 
+        // bindIf so a host can bind its own CurrentContext; else the null context.
+        $this->app->bindIf(CurrentContext::class, NullCurrentContext::class);
+
         $this->app->singleton(ConsoleManager::class, static fn (Application $app): ConsoleManager => new ConsoleManager(
             $app->make(NavRegistry::class),
             $app->make(FeatureRegistry::class),
             $app->make(SlotRegistry::class),
+            $app->make(CurrentContext::class),
         ));
     }
 

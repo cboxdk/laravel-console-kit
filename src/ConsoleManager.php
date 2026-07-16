@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Console\Kit;
 
+use Cbox\Console\Kit\Contracts\CurrentContext;
 use Cbox\Console\Kit\Contracts\FeatureRegistry;
 use Cbox\Console\Kit\Contracts\NavRegistry;
 use Cbox\Console\Kit\Contracts\SlotRegistry;
@@ -23,11 +24,18 @@ final class ConsoleManager
         private readonly NavRegistry $nav,
         private readonly FeatureRegistry $features,
         private readonly SlotRegistry $slots,
+        private readonly CurrentContext $context,
     ) {}
 
     public function nav(): NavRegistry
     {
         return $this->nav;
+    }
+
+    /** Who the console request is for (current org / user / admin). */
+    public function context(): CurrentContext
+    {
+        return $this->context;
     }
 
     public function features(): FeatureRegistry

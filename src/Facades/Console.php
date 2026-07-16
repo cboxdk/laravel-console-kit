@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Facade;
  * @method static \Cbox\Console\Kit\Contracts\NavRegistry nav()
  * @method static \Cbox\Console\Kit\Contracts\FeatureRegistry features()
  * @method static \Cbox\Console\Kit\Contracts\SlotRegistry slots()
+ * @method static \Cbox\Console\Kit\Contracts\CurrentContext context()
  * @method static bool featureActive(string $key)
  * @method static void dashboardCard(string|\Closure $content, int $order = 100)
  *
