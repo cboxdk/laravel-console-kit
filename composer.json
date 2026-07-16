@@ -1,0 +1,56 @@
+{
+    "$schema": "https://getcomposer.org/schema.json",
+    "name": "cboxdk/laravel-console-kit",
+    "description": "Extension hooks for a Cbox admin console — nav areas, feature gates, UI slots and dashboard cards that an optional package registers into via composer, with zero host edits. The plugin pattern behind billing and other drop-in modules.",
+    "keywords": ["cbox", "console", "admin", "plugin", "extension", "laravel"],
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": "^8.4",
+        "illuminate/contracts": "^12.0 || ^13.0",
+        "illuminate/support": "^12.0 || ^13.0",
+        "illuminate/view": "^12.0 || ^13.0"
+    },
+    "require-dev": {
+        "larastan/larastan": "^3.0",
+        "laravel/pint": "^1.18",
+        "orchestra/testbench": "^10.0 || ^11.0",
+        "pestphp/pest": "^3.5 || ^4.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Cbox\\Console\\Kit\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Cbox\\Console\\Kit\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "lint": "pint --test",
+        "analyse": "phpstan analyse --no-progress --memory-limit=1G",
+        "test": "pest",
+        "license-check": "@php bin/check-licenses.php",
+        "sbom": "@php bin/generate-sbom.php",
+        "qa": ["@lint", "@analyse", "@test", "@license-check", "@composer audit"]
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Cbox\\Console\\Kit\\ConsoleKitServiceProvider"
+            ],
+            "aliases": {
+                "Console": "Cbox\\Console\\Kit\\Facades\\Console"
+            }
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
