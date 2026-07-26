@@ -9,7 +9,7 @@ namespace Cbox\Console\Kit\Nav;
  * plugin fetches an area by key (creating it if new, or adding to a host area like
  * "overview") and appends pages — no host edit required.
  */
-final class NavArea
+class NavArea
 {
     /** @var list<NavPage> */
     private array $pages = [];

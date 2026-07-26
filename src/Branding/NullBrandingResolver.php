@@ -12,7 +12,7 @@ use Cbox\Console\Kit\Contracts\BrandingResolver;
  * `@consoleBrandingStyle` injects nothing. Bound via `bindIf` in the service
  * provider, so a white-label plugin can override it without touching the host.
  */
-final class NullBrandingResolver implements BrandingResolver
+class NullBrandingResolver implements BrandingResolver
 {
     public function resolve(): Branding
     {

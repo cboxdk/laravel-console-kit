@@ -17,7 +17,7 @@ use Closure;
  * `Console::slots()`, `Console::dashboardCard()`) and the host reads from when it
  * renders its shell. A thin facade over the registries.
  */
-final class ConsoleManager
+class ConsoleManager
 {
     /** The well-known slot the host renders for contributed dashboard cards. */
     public const DASHBOARD_CARDS = 'console.dashboard.cards';

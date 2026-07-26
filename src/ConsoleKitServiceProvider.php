@@ -20,7 +20,7 @@ use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\ServiceProvider;
 
-final class ConsoleKitServiceProvider extends ServiceProvider
+class ConsoleKitServiceProvider extends ServiceProvider
 {
     public function register(): void
     {

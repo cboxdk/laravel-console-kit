@@ -10,7 +10,7 @@ use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Contracts\View\Factory as ViewFactory;
 use Illuminate\Contracts\View\View;
 
-final class DefaultSlotRegistry implements SlotRegistry
+class DefaultSlotRegistry implements SlotRegistry
 {
     /** @var array<string, list<array{content: string|Closure, order: int}>> */
     private array $slots = [];

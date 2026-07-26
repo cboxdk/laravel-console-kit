@@ -10,7 +10,7 @@ use Cbox\Console\Kit\Contracts\FeatureRegistry;
  * A single page (a leaf) inside a nav area. `feature`, when set, gates the page: it
  * shows only when that feature is {@see FeatureRegistry::active()}.
  */
-final class NavPage
+class NavPage
 {
     public function __construct(
         public readonly string $route,

@@ -6,7 +6,7 @@ namespace Cbox\Console\Kit\Nav;
 
 use Cbox\Console\Kit\Contracts\NavRegistry;
 
-final class DefaultNavRegistry implements NavRegistry
+class DefaultNavRegistry implements NavRegistry
 {
     /** @var array<string, NavArea> */
     private array $areas = [];

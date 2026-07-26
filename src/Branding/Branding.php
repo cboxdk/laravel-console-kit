@@ -19,7 +19,7 @@ namespace Cbox\Console\Kit\Branding;
  * {@see styleTag()} / {@see cssVariables()} are safe to echo unescaped. Asset URLs
  * are likewise restricted to same-origin/relative, http(s) or `data:image/`.
  */
-final readonly class Branding
+readonly class Branding
 {
     /** @var array<string, string> validated `--token` => value pairs */
     public array $tokens;

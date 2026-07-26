@@ -14,7 +14,7 @@ use Symfony\Component\HttpFoundation\Response;
  * plugin's routes (`->middleware('console.feature:billing')`) are unreachable when the
  * plugin's feature is off — the route simply does not exist for a self-hosted install.
  */
-final class RequireFeature
+class RequireFeature
 {
     public function __construct(private readonly FeatureRegistry $features) {}
 

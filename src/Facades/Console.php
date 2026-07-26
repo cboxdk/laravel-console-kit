@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\Facade;
  *
  * @see ConsoleManager
  */
-final class Console extends Facade
+class Console extends Facade
 {
     protected static function getFacadeAccessor(): string
     {

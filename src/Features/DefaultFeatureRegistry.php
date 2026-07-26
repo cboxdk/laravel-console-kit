@@ -7,7 +7,7 @@ namespace Cbox\Console\Kit\Features;
 use Cbox\Console\Kit\Contracts\FeatureRegistry;
 use Closure;
 
-final class DefaultFeatureRegistry implements FeatureRegistry
+class DefaultFeatureRegistry implements FeatureRegistry
 {
     /** @var array<string, bool|Closure(): bool> */
     private array $features = [];
