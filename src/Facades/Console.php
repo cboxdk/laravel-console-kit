@@ -15,6 +15,8 @@ use Illuminate\Support\Facades\Facade;
  * @method static \Cbox\Console\Kit\Branding\Branding branding()
  * @method static bool featureActive(string $key)
  * @method static void dashboardCard(string|\Closure $content, int $order = 100)
+ * @method static \Cbox\Console\Kit\Shell\ShellBuilder shell()
+ * @method static void shellRoutes(string $prefix = 'shell', list<string> $middleware = ['web', 'auth'])
  *
  * @see ConsoleManager
  */
