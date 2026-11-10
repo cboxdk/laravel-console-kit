@@ -108,3 +108,9 @@ it('guards a route with the console.feature middleware', function (): void {
     Route::middleware('console.feature:reports')->get('/reports-x', fn (): string => 'ok');
     $this->get('/reports-x')->assertOk()->assertSee('ok');
 });
+
+it('refuses a slot contribution naming a view that does not exist', function (): void {
+    Console::slots()->add('x', 'no.such.view');
+
+    Console::slots()->render('x');
+})->throws(InvalidArgumentException::class, 'View [no.such.view] not found.');

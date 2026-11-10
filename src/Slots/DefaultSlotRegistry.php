@@ -39,8 +39,14 @@ class DefaultSlotRegistry implements SlotRegistry
         $html = '';
         foreach ($items as $item) {
             $content = $item['content'];
-            $rendered = $content instanceof Closure ? $content($data) : $this->views->make($content, $data);
-            $html .= $this->toHtml($rendered);
+            if ($content instanceof Closure) {
+                $html .= $this->toHtml($content($data));
+            } elseif ($this->views->exists($content)) {
+                $html .= $this->toHtml($this->views->make($content, $data));
+            } else {
+                // As the view factory would: a contribution naming a missing view is a bug.
+                throw new \InvalidArgumentException("View [{$content}] not found.");
+            }
         }
 
         return $html;
