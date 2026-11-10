@@ -379,7 +379,11 @@ class ShellBuilder
             notifications: $this->notifications instanceof NotificationSource
                 ? ShellNotifications::enabled($this->notifications->unread($request), route(self::ROUTE_NOTIFICATIONS, [], false))
                 : ShellNotifications::disabled(),
-            apps: new ShellApps($this->catalogUrl ?? ($this->router->has('cbox-id.apps.catalog') ? route('cbox-id.apps.catalog', [], false) : '/apps/catalog')),
+            // The switcher shows the apps the organization does not have yet too (dimmed), so it
+            // asks laravel-id-client's catalog for them; older switchers do not.
+            apps: new ShellApps($this->catalogUrl ?? ($this->router->has('cbox-id.apps.catalog')
+                ? route('cbox-id.apps.catalog', ['include' => 'available'], false)
+                : '/apps/catalog?include=available')),
             banner: $this->buildBanner($request, $context),
             preferences: $this->preferences->read($request),
         );

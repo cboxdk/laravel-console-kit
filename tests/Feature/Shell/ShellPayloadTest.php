@@ -50,7 +50,7 @@ it('shares the exact wire shape of spec §11.1', function (): void {
         ->and($shell['context']['levels'][1]['allUrl'])->toBe('/orgs/cbox/projects')
         ->and($shell['help'])->toBe(['enabled' => false])
         ->and($shell['notifications'])->toBe(['enabled' => false])
-        ->and($shell['apps'])->toBe(['catalogUrl' => '/apps/catalog'])
+        ->and($shell['apps'])->toBe(['catalogUrl' => '/apps/catalog?include=available'])
         ->and($shell['preferences'])->toBe(['theme' => 'system', 'locale' => 'en', 'railPinned' => false, 'helpOpen' => false]);
 
     // The prop carries only the current selection: no lists (spec §11.2).
@@ -240,7 +240,7 @@ it('ignores a preference cookie it does not recognise', function (): void {
 it('uses laravel-id-client\'s catalog route when the app registered it', function (): void {
     Route::get('/apps/x-catalog', fn () => [])->name('cbox-id.apps.catalog');
 
-    $this->assertShell($this->get('/orgs/cbox', inertiaVisit()))->assertPath('apps.catalogUrl', '/apps/x-catalog');
+    $this->assertShell($this->get('/orgs/cbox', inertiaVisit()))->assertPath('apps.catalogUrl', '/apps/x-catalog?include=available');
 
     Console::shell()->appCatalogUrl('/custom/catalog');
 

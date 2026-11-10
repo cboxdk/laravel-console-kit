@@ -56,7 +56,7 @@ the kit sends.
 | `palette.actions` | `->actions()`. A route action takes the current route's parameters; one that cannot be built here is left out. |
 | `help` | `->help(HelpConfig)` and `->helpTopic(fn)`. Disabled without a config. |
 | `notifications` | `{enabled: false}` without a source: the bell is not rendered at all. |
-| `apps.catalogUrl` | `->appCatalogUrl()`, else laravel-id-client's `cbox-id.apps.catalog`, else `/apps/catalog`. |
+| `apps.catalogUrl` | `->appCatalogUrl()`, else laravel-id-client's `cbox-id.apps.catalog`, else `/apps/catalog`, with `?include=available` so the switcher also gets the apps the organization does not have yet. |
 | `banner` | `->banner(fn)` wins. Otherwise a sandbox strip when the deepest current item has `testData: true`, with the text from `->sandboxText()`. |
 | `preferences` | `ShellPreferenceStore` (cookies by default), the app locale. |
 
