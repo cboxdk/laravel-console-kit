@@ -20,8 +20,12 @@ use Cbox\Console\Kit\Shell\CookieShellPreferences;
 use Cbox\Console\Kit\Shell\ShellBuilder;
 use Cbox\Console\Kit\Slots\DefaultSlotRegistry;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Contracts\View\View;
+use Illuminate\Cookie\Middleware\EncryptCookies;
+use Illuminate\Http\Request;
 use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\Facades\View as Views;
 use Illuminate\Support\ServiceProvider;
 
 class ConsoleKitServiceProvider extends ServiceProvider
@@ -72,5 +76,19 @@ class ConsoleKitServiceProvider extends ServiceProvider
 
         // Shares the `shell` prop: ->middleware('console.shell')
         $router->aliasMiddleware('console.shell', HandleShell::class);
+
+        // Blade views rendered under `console.shell` get `$shell`, built on first use.
+        Views::composer('*', function (View $view): void {
+            $request = $this->app->bound('request') ? $this->app->make('request') : null;
+            $build = $request instanceof Request ? $request->attributes->get(HandleShell::ATTRIBUTE) : null;
+
+            if ($build instanceof \Closure && ! array_key_exists('shell', $view->getData())) {
+                $view->with('shell', $build());
+            }
+        });
+
+        // Theme, rail and Help are written by the page itself before the round trip ends,
+        // so they are plain cookies (the values are not secret; the reader validates them).
+        EncryptCookies::except(CookieShellPreferences::CLIENT_COOKIES);
     }
 }

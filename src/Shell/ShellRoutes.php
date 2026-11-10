@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Console\Kit\Shell;
 
 use Cbox\Console\Kit\Http\Controllers\ShellContextController;
+use Cbox\Console\Kit\Http\Controllers\ShellHomeController;
 use Cbox\Console\Kit\Http\Controllers\ShellNotificationsController;
 use Cbox\Console\Kit\Http\Controllers\ShellPreferencesController;
 use Cbox\Console\Kit\Http\Controllers\ShellSearchController;
@@ -24,6 +25,8 @@ use Illuminate\Support\Facades\Route;
  *  - PATCH    preferences                     console.shell.preferences
  *
  * They need a signed-in person: `web` and `auth` by default.
+ *
+ * {@see home()} adds `GET /` (console.shell.home), which lands on the last context.
  */
 final class ShellRoutes
 {
@@ -43,5 +46,16 @@ final class ShellRoutes
             Route::post('notifications/read', [ShellNotificationsController::class, 'read'])->name(ShellBuilder::ROUTE_NOTIFICATIONS.'.read');
             Route::patch('preferences', ShellPreferencesController::class)->name(ShellBuilder::ROUTE_PREFERENCES);
         });
+    }
+
+    /**
+     * `GET {$uri}` → the person's last context, else their first top-level item, else the
+     * top level's collection (spec §5.6: "`/` lands there").
+     *
+     * @param  list<string>  $middleware
+     */
+    public static function home(string $uri = '/', array $middleware = ['web', 'auth']): void
+    {
+        Route::middleware($middleware)->get($uri, ShellHomeController::class)->name(ShellBuilder::ROUTE_HOME);
     }
 }

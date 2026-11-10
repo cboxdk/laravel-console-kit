@@ -25,7 +25,10 @@ interface ShellPreferenceStore
      */
     public function write(Request $request, ?Theme $theme = null, ?bool $railPinned = null, ?bool $helpOpen = null): array;
 
-    /** The same-origin URL of the context the person last switched to, if known. */
+    /**
+     * The same-origin URL of the context this person last switched to, if known. Never
+     * another person's: a store shared by several people in one browser keys it by person.
+     */
     public function lastContext(Request $request): ?string;
 
     /** @return list<Cookie> */

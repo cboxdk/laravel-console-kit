@@ -59,6 +59,18 @@ class ConsoleManager
         ShellRoutes::register($prefix, $middleware);
     }
 
+    /**
+     * Register `GET /` (or `$uri`) to land on the person's last context, else their first
+     * organization, else the organization list (spec §5.6). Call it from `routes/web.php`
+     * in place of the app's own home route.
+     *
+     * @param  list<string>  $middleware
+     */
+    public function shellHome(string $uri = '/', array $middleware = ['web', 'auth']): void
+    {
+        ShellRoutes::home($uri, $middleware);
+    }
+
     public function nav(): NavRegistry
     {
         return $this->nav;
