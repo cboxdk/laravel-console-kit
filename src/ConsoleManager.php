@@ -10,6 +10,8 @@ use Cbox\Console\Kit\Contracts\CurrentContext;
 use Cbox\Console\Kit\Contracts\FeatureRegistry;
 use Cbox\Console\Kit\Contracts\NavRegistry;
 use Cbox\Console\Kit\Contracts\SlotRegistry;
+use Cbox\Console\Kit\Shell\ShellBuilder;
+use Cbox\Console\Kit\Shell\ShellRoutes;
 use Closure;
 
 /**
@@ -28,7 +30,46 @@ class ConsoleManager
         private readonly SlotRegistry $slots,
         private readonly CurrentContext $context,
         private readonly BrandingResolver $branding,
+        private readonly ?Closure $shell = null,
     ) {}
+
+    /**
+     * The shared shell's description (spec §11.3): levels, search, actions, Help and the
+     * bell. Configure it once in a service provider; `console.shell` shares it per request.
+     */
+    public function shell(): ShellBuilder
+    {
+        $shell = $this->shell instanceof Closure ? ($this->shell)() : app(ShellBuilder::class);
+
+        if (! $shell instanceof ShellBuilder) {
+            throw new \LogicException('The shell resolver did not return a ShellBuilder.');
+        }
+
+        return $shell;
+    }
+
+    /**
+     * Register the shell's endpoints (switch, context lists, search, bell, preferences).
+     * Call it from `routes/web.php`.
+     *
+     * @param  list<string>  $middleware
+     */
+    public function shellRoutes(string $prefix = 'shell', array $middleware = ['web', 'auth']): void
+    {
+        ShellRoutes::register($prefix, $middleware);
+    }
+
+    /**
+     * Register `GET /` (or `$uri`) to land on the person's last context, else their first
+     * organization, else the organization list (spec §5.6). Call it from `routes/web.php`
+     * in place of the app's own home route.
+     *
+     * @param  list<string>  $middleware
+     */
+    public function shellHome(string $uri = '/', array $middleware = ['web', 'auth']): void
+    {
+        ShellRoutes::home($uri, $middleware);
+    }
 
     public function nav(): NavRegistry
     {

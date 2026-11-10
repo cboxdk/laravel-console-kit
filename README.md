@@ -50,6 +50,27 @@ Gate a plugin's routes so they don't even exist when its feature is off:
 Route::middleware('console.feature:billing')->group(fn () => /* billing routes */);
 ```
 
+## The shared shell
+
+The kit also builds the `shell` prop every Cbox app renders with cbox-ui: the rail, the
+header's context selectors, the ⌘K palette, Help, the bell and the app switcher.
+
+```php
+Console::shell()
+    ->app('infra', 'Cbox Infra')
+    ->levels(app(OrganizationLevel::class), new ProjectLevel, new EnvironmentLevel)
+    ->search(new DeploymentSearch)
+    ->actions(fn () => [PaletteAction::route('deployments.create', 'New deployment')])
+    ->helpTopic(fn (Request $r) => $r->route()?->getName());
+
+// routes/web.php
+Console::shellRoutes();
+Route::middleware(['web', 'auth', 'console.shell'])->group(/* your pages */);
+```
+
+Everything is built from the app's own data; nothing waits on another service. See the
+[quickstart](docs/quickstart.md) and [the shared shell](docs/core-concepts/shell.md).
+
 ## Why a separate package
 
 The hook contracts must be reusable across consoles, so they can't live inside any one

@@ -18,6 +18,15 @@ Deny-by-default throughout: an unregistered feature is off, a gated page is hidd
 guarded route 404s. The kit holds no feature logic and no UI of its own — just the
 shared socket.
 
+It also builds the **shared shell**: the `shell` prop every Cbox app renders with
+cbox-ui (rail, context selectors, ⌘K palette, Help, bell, app switcher), the endpoints
+behind its menus, and the contracts an app implements to fill it.
+
+- **[Quickstart](quickstart.md)** — the shared shell in four steps.
+- **[Requirements](requirements.md)** — PHP, Laravel and the optional Inertia companion.
 - **[README](../README.md)** — the four hooks and the host wiring at a glance.
+- **[Getting started](getting-started/_index.md)** — install, and [test](getting-started/testing.md) with the fakes.
+- **[Core concepts](core-concepts/_index.md)** — [the shared shell](core-concepts/shell.md): the prop, switching, local first.
+- **[Extension points](extension-points/_index.md)** — [context levels and providers](extension-points/context-levels.md).
 - **[Cookbook](cookbook/_index.md)** — task recipes, including copy-paste prompts for
   adopting the socket in a host and building a plug.
