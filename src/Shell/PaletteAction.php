@@ -13,6 +13,7 @@ use Illuminate\Routing\Router;
  *
  *     PaletteAction::route('deployments.create', 'New deployment');
  *     PaletteAction::url('/orgs/cbox/settings/members?invite=1', 'Invite members');
+ *     PaletteAction::route('members', 'Invite members', fragment: 'invite'); // …/members#invite
  *
  * A route action takes the current request's route parameters that the target route
  * needs (the organization slug, say), so it works on every page of a context without
@@ -33,15 +34,22 @@ readonly class PaletteAction
         public ?string $icon = null,
         public array $keywords = [],
         public ?string $shortcut = null,
+        public ?string $fragment = null,
     ) {}
 
     /**
+     * `fragment` is added to the built URL as `#fragment` (`members#invite`); the action's
+     * id is then `{name}#{fragment}`, so two actions to one route stay apart.
+     *
      * @param  array<string, string|int>  $parameters
      * @param  list<string>  $keywords
      */
-    public static function route(string $name, string $label, array $parameters = [], ?string $icon = null, array $keywords = [], ?string $shortcut = null): self
+    public static function route(string $name, string $label, array $parameters = [], ?string $icon = null, array $keywords = [], ?string $shortcut = null, ?string $fragment = null): self
     {
-        return new self($name, $label, null, $name, $parameters, $icon, $keywords, $shortcut);
+        $fragment = $fragment === null ? null : ltrim($fragment, '#');
+        $fragment = $fragment === '' ? null : $fragment;
+
+        return new self($fragment === null ? $name : $name.'#'.$fragment, $label, null, $name, $parameters, $icon, $keywords, $shortcut, $fragment);
     }
 
     /**
@@ -64,7 +72,15 @@ readonly class PaletteAction
 
         $url = ShellUrls::route($router, $this->routeName, $current, $this->parameters);
 
-        return $url === null ? null : new self($this->id, $this->label, $url, null, [], $this->icon, $this->keywords, $this->shortcut);
+        if ($url === null) {
+            return null;
+        }
+
+        if ($this->fragment !== null && $this->fragment !== '') {
+            $url .= '#'.rawurlencode(ltrim($this->fragment, '#'));
+        }
+
+        return new self($this->id, $this->label, $url, null, [], $this->icon, $this->keywords, $this->shortcut);
     }
 
     /** @return array{id: string, label: string, url: string, icon?: string, keywords?: list<string>, shortcut?: string} */

@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Locked nav pages: `->page(..., feature: 'coupons', lockedWhenOff: true, upgradeUrl: 'billing.upgrade')` shows a page whose feature is off with `locked: true`, linking to the upgrade route or path (else to the page itself), instead of leaving it out.
+- Nav page badges: `->page(..., count: fn (Request $request, array $context) => 3)`, sent as `count` when above 0.
+- Nav page groups: `->page(..., group: 'Organization')`, sent as `group`; pages of one group are sent together.
+- `->navFilter(fn (NavPage $page, Request $request, array $context): bool)` on the shell builder: leave out nav pages per request (a page that would answer 403).
+- `->palettePlaceholder(string|Closure)` on the shell builder, sent as `palette.placeholder`.
+- `PaletteAction::route(..., fragment: 'invite')` adds `#invite` to the action's URL.
+- `shell.account` for the account menu: `->account(profileUrl:, switchAccountUrl:, signOutUrl:, signOutMethod:, signedInWith:, languages:, formats:)`, each URL a route name, a path, an `https://` URL or a closure. Defaults: Cbox ID's profile page through laravel-id-client (else the `profile` route), `login.switch` and `logout`. Left out of the prop when nothing resolves.
+- Nav areas, nav pages and the banner action also send their link as `url`, the name cbox-ui's types read. `href` stays.
+
+### Fixed
+- A record page whose list is not named `.index` (`billing.coupons.show` → `billing.coupons`) now lights its list page and area, so the area's subnav shows. The app's `->listFallback()` is used first, then the resource's pages, then the nearest parent route that is a nav page.
+
+All additions are optional and backward compatible with 0.2.x.
+
 ## v0.2.2 — 2026-11-10
 
 ### Added

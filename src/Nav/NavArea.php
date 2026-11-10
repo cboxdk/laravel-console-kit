@@ -40,11 +40,27 @@ class NavArea
      * `can` gates it on an ability (`->page('billing.plan', 'Plan', can: 'manage-billing')`),
      * checked with `$arguments` (a list, or a closure over the request and the context).
      *
+     * `lockedWhenOff: true` shows the page locked while its feature is off, linking to
+     * `upgradeUrl` (a route name or a `/path`), instead of leaving it out. `count` is a
+     * badge (an int, or a closure over the request and the context). `group` is a heading
+     * inside the area's subnav. See {@see NavPage}.
+     *
      * @param  list<mixed>|(Closure(Request, list<ContextItem>): list<mixed>)  $arguments
+     * @param  int|(Closure(Request, list<ContextItem>): ?int)|null  $count
      */
-    public function page(string $route, string $label, ?string $feature = null, int $order = 100, ?string $can = null, array|Closure $arguments = []): self
-    {
-        $this->pages[] = new NavPage($route, $label, $feature, $order, $can, $arguments);
+    public function page(
+        string $route,
+        string $label,
+        ?string $feature = null,
+        int $order = 100,
+        ?string $can = null,
+        array|Closure $arguments = [],
+        bool $lockedWhenOff = false,
+        ?string $upgradeUrl = null,
+        int|Closure|null $count = null,
+        ?string $group = null,
+    ): self {
+        $this->pages[] = new NavPage($route, $label, $feature, $order, $can, $arguments, $lockedWhenOff, $upgradeUrl, $count, $group);
 
         return $this;
     }
