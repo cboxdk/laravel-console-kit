@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.2.3 — 2026-11-11
 
 ### Added
 - Locked nav pages: `->page(..., feature: 'coupons', lockedWhenOff: true, upgradeUrl: 'billing.upgrade')` shows a page whose feature is off with `locked: true`, linking to the upgrade route or path (else to the page itself), instead of leaving it out.
