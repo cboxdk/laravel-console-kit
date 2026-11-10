@@ -16,8 +16,10 @@ use Cbox\Console\Kit\Shell\ShellPerson;
 use Cbox\Console\Kit\Shell\StaticHelpConfig;
 use Cbox\Console\Kit\Testing\AssertableShell;
 use Cbox\Console\Kit\Testing\FakeNotificationSource;
+use Illuminate\Contracts\Auth\Access\Gate as GateContract;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Router;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
 
 beforeEach(function (): void {
@@ -72,6 +74,50 @@ it('builds the nav from the registry, filtered by features, with the active area
         ->assertActiveArea('overview', 'orgs.show')
         // Pages that need a project cannot be built on an organization page; the area is left out.
         ->assertNoNavArea('deployments');
+});
+
+it('leaves out nav pages and areas the person may not open', function (): void {
+    $seen = [];
+    Gate::define('view-logs', function ($user, string $orgId) use (&$seen): bool {
+        $seen[] = $orgId;
+
+        return $orgId === 'org_2';
+    });
+    Gate::define('manage-billing', fn (): bool => false);
+
+    Console::nav()->area('deployments')->page('logs.index', 'Audit logs', can: 'view-logs',
+        arguments: fn (Request $request, array $context): array => [$context[0]->id]);
+    Console::nav()->area('admin', 'Admin', 'shield', 95)->can('manage-billing')->page('orgs.settings', 'Admin');
+
+    $cbox = $this->assertShell($this->get('/orgs/cbox/projects/webshop/environments/production/deployments', inertiaVisit()))
+        ->assertNavArea('deployments')
+        ->assertNoNavArea('admin');
+    expect(array_column($cbox->get('nav.areas.1.pages'), 'label'))->toBe(['Deployments', 'Logs']);
+
+    $acme = $this->assertShell($this->get('/orgs/acme/projects/storefront/environments/staging/deployments', inertiaVisit()));
+    expect(array_column($acme->get('nav.areas.1.pages'), 'label'))->toBe(['Deployments', 'Logs', 'Audit logs'])
+        ->and($seen)->toBe(['org_1', 'org_2']);
+});
+
+it('shares $shell with a Blade view, built only when a view renders', function (): void {
+    $built = 0;
+    Console::shell()->person(function () use (&$built): ShellPerson {
+        $built++;
+
+        return new ShellPerson('usr_1', 'Ada Lovelace');
+    });
+
+    app('view')->addLocation(__DIR__.'/../../views');
+
+    Route::middleware(['web', 'auth', 'console.shell'])->group(function (): void {
+        Route::get('/orgs/{org}/blade', fn () => view('shell-name'));
+        Route::get('/orgs/{org}/json', fn () => ['ok' => true]);
+    });
+
+    $this->get('/orgs/cbox/blade')->assertOk()->assertSeeText('Ada Lovelace');
+    $this->get('/orgs/cbox/json')->assertOk();
+
+    expect($built)->toBe(1);
 });
 
 it('marks the list area active on an entity page of the same resource', function (): void {
@@ -174,7 +220,8 @@ it('renders no bell without a source, and the unread count with one', function (
 });
 
 it('reads the per-person preferences from cookies before first paint', function (): void {
-    $shell = $this->withCookies([
+    // The page writes these itself, so they are plain (not encrypted) cookies.
+    $shell = $this->withUnencryptedCookies([
         CookieShellPreferences::THEME => 'dark',
         CookieShellPreferences::RAIL => '1',
         CookieShellPreferences::HELP => '1',
@@ -184,7 +231,7 @@ it('reads the per-person preferences from cookies before first paint', function 
 });
 
 it('ignores a preference cookie it does not recognise', function (): void {
-    $shell = $this->withCookies([CookieShellPreferences::THEME => 'neon'])
+    $shell = $this->withUnencryptedCookies([CookieShellPreferences::THEME => 'neon'])
         ->get('/orgs/cbox', inertiaVisit())->json('props.shell.preferences');
 
     expect($shell['theme'])->toBe('system');
@@ -208,7 +255,7 @@ it('takes the person from the app when it says so', function (): void {
 });
 
 it('refuses to build without the shell routes, with a message that says what to do', function (): void {
-    $builder = new ShellBuilder(app(NavRegistry::class), Console::features(), new Router(app('events'), app()), new CookieShellPreferences);
+    $builder = new ShellBuilder(app(NavRegistry::class), Console::features(), new Router(app('events'), app()), new CookieShellPreferences, app(GateContract::class));
 
     $builder->build(Request::create('/'));
 })->throws(LogicException::class, 'Console::shellRoutes()');

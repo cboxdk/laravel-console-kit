@@ -45,6 +45,7 @@ class ShellContextController
         [$contextLevel, $ancestors] = $this->resolve($request, $level);
 
         abort_unless($contextLevel instanceof CreatesContextItems, 404);
+        abort_unless($contextLevel->canCreate($request, $ancestors), 403);
 
         $request->validate(['name' => ['required', 'string', 'max:120']]);
 

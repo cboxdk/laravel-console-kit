@@ -12,7 +12,10 @@ use Cbox\Console\Kit\Contracts\NavRegistry;
 use Cbox\Console\Kit\Contracts\NotificationSource;
 use Cbox\Console\Kit\Contracts\SearchProvider;
 use Cbox\Console\Kit\Contracts\ShellPreferenceStore;
+use Cbox\Console\Kit\Nav\NavArea;
+use Cbox\Console\Kit\Nav\NavPage;
 use Closure;
+use Illuminate\Contracts\Auth\Access\Gate;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
@@ -53,6 +56,8 @@ class ShellBuilder
 
     public const ROUTE_PREFERENCES = 'console.shell.preferences';
 
+    public const ROUTE_HOME = 'console.shell.home';
+
     private ?ShellApp $app = null;
 
     /** @var (Closure(Request): ?ShellPerson)|null */
@@ -89,6 +94,7 @@ class ShellBuilder
         private readonly FeatureRegistry $features,
         private readonly Router $router,
         private readonly ShellPreferenceStore $preferences,
+        private readonly Gate $gate,
     ) {}
 
     /** The app's product key (`id`, `billing`, `infra`…), its name and where the brand row links. */
@@ -332,6 +338,11 @@ class ShellBuilder
 
         $resource = substr($name, 0, (int) strrpos($name, '.') + 1);
 
+        // The resource's `.index` route is its list; else the first nav page of the resource.
+        if ($resource.'index' !== $name && $this->router->has($resource.'index')) {
+            return $resource.'index';
+        }
+
         foreach ($this->nav->areas() as $area) {
             foreach ($area->pages() as $page) {
                 if ($page->route !== $name && str_starts_with($page->route, $resource)) {
@@ -361,8 +372,8 @@ class ShellBuilder
         return new Shell(
             app: $this->resolveApp(),
             person: $this->resolvePerson($request),
-            nav: $this->buildNav($current),
-            context: new ShellContext($this->buildLevels($context), route(self::ROUTE_SWITCH, [], false)),
+            nav: $this->buildNav($request, $current, $context),
+            context: new ShellContext($this->buildLevels($request, $context), route(self::ROUTE_SWITCH, [], false)),
             palette: new ShellPalette($this->searchUrl($request, $context), $this->buildActions($request, $current)),
             help: $this->buildHelp($request),
             notifications: $this->notifications instanceof NotificationSource
@@ -416,8 +427,9 @@ class ShellBuilder
         return is_string($value) && $value !== '' ? $value : null;
     }
 
-    private function buildNav(?Route $current): ShellNav
+    private function buildNav(Request $request, ?Route $current, ResolvedContext $context): ShellNav
     {
+        $gate = $this->gate->forUser($request->user());
         $currentName = $current?->getName();
         $areas = [];
         $activeArea = '';
@@ -428,14 +440,14 @@ class ShellBuilder
             ? substr($currentName, 0, (int) strrpos($currentName, '.') + 1) : null;
 
         foreach ($this->nav->areas() as $area) {
-            if ($area->feature !== null && ! $this->features->active($area->feature)) {
+            if (! $this->visible($area, $gate, $request, $context)) {
                 continue;
             }
 
             $pages = [];
 
             foreach ($area->pages() as $page) {
-                if ($page->feature !== null && ! $this->features->active($page->feature)) {
+                if (! $this->visible($page, $gate, $request, $context)) {
                     continue;
                 }
 
@@ -471,8 +483,29 @@ class ShellBuilder
         return new ShellNav($areas, $activeArea, $activePage);
     }
 
+    /**
+     * Whether a nav area or page shows: its feature is active and the person may use its
+     * ability, checked with the arguments it declares (deny by default when the check fails).
+     */
+    private function visible(NavArea|NavPage $entry, Gate $gate, Request $request, ResolvedContext $context): bool
+    {
+        if ($entry->feature !== null && ! $this->features->active($entry->feature)) {
+            return false;
+        }
+
+        if ($entry->ability === null) {
+            return true;
+        }
+
+        $arguments = $entry->abilityArguments instanceof Closure
+            ? ($entry->abilityArguments)($request, $context->items)
+            : $entry->abilityArguments;
+
+        return $gate->allows($entry->ability, $arguments);
+    }
+
     /** @return list<ShellContextLevel> */
-    private function buildLevels(ResolvedContext $context): array
+    private function buildLevels(Request $request, ResolvedContext $context): array
     {
         $out = [];
 
@@ -494,7 +527,7 @@ class ShellBuilder
                 listUrl: route(self::ROUTE_LIST, ['level' => $level->key(), ...$query], false),
                 allUrl: $level->allUrl($ancestors),
                 settingsUrl: str_replace('__ID__', ShellContextLevel::SETTINGS_PLACEHOLDER, $settings),
-                createUrl: $level instanceof CreatesContextItems
+                createUrl: $level instanceof CreatesContextItems && $level->canCreate($request, $ancestors)
                     ? route(self::ROUTE_CREATE, ['level' => $level->key(), ...$query], false)
                     : null,
             );

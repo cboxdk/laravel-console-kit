@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace Cbox\Console\Kit\Shell;
 
+use Cbox\Console\Kit\Contracts\ContextLevel;
 use Illuminate\Http\Request;
 use Throwable;
 
 /**
  * The palette's server groups (spec §6.1): "Records" from the app's search provider, and
- * "Go to" (organizations, and level 2/3 combinations like "Webshop · Production") from
- * the context levels. Each group is answered on its own, so the client can ask for them
+ * "Go to" (organizations, and level 2/3 combinations like "Webshop · Production" across
+ * all the person's organizations) from the context levels. Each group is answered on its own, so the client can ask for them
  * in parallel and a slow or failing group never blocks the others: a group that throws is
  * reported and left out.
  *
@@ -21,6 +22,12 @@ class ShellSearch
     public const RECORDS = 'records';
 
     public const GOTO = 'goto';
+
+    /** How many of the person's level-1 items "Go to" searches level 2 under. */
+    public const GOTO_PARENTS = 10;
+
+    /** How many level-2 hits "Go to" expands into "Project · Environment" rows. */
+    public const GOTO_EXPANDED = 3;
 
     public function __construct(private readonly ShellBuilder $shell) {}
 
@@ -105,7 +112,13 @@ class ShellSearch
     }
 
     /**
-     * Level 1 across the person's items; level 2 (and 2 · 3) under the current level 1.
+     * Level 1 across the person's items, and level 2 (and 2 · 3) across all the level-1
+     * items they belong to, the current one first (spec §6.1.4). Each level-2 row's hint
+     * names its parent ("Project · Cbox").
+     *
+     * Bounded: level 2 is searched under at most {@see GOTO_PARENTS} level-1 items, and only
+     * the first {@see GOTO_EXPANDED} level-2 hits are expanded into their level-3 items, so
+     * one keystroke costs a fixed number of `list()` calls.
      *
      * @param  array<string, ContextItem>  $context
      * @return list<SearchResult>
@@ -128,34 +141,63 @@ class ShellSearch
             );
         }
 
-        $parent = $context[$top->key()] ?? null;
         $second = $levels[1] ?? null;
 
-        if ($parent instanceof ContextItem && $second !== null) {
-            $third = $levels[2] ?? null;
+        if ($second === null) {
+            return array_slice($results, 0, max($limit, 1) * 3);
+        }
 
+        $third = $levels[2] ?? null;
+        $expanded = 0;
+
+        foreach ($this->parents($request, $top, $context[$top->key()] ?? null) as $parent) {
             foreach ($second->list($request, new ContextQuery($term, [$parent], null, $limit))->items as $item) {
+                $select = [$top->key() => $parent->id, $second->key() => $item->id];
+                $hint = $second->label().' · '.$parent->name;
+
                 $results[] = new SearchResult(
-                    $second->key().':'.$item->id, $item->name, $this->switchUrl($from, [$second->key() => $item->id]),
-                    $second->label().' · '.$parent->name,
+                    $second->key().':'.$item->id, $item->name, $this->switchUrl($from, $select), $hint,
                 );
 
-                if ($third === null) {
+                if ($third === null || $expanded >= self::GOTO_EXPANDED) {
                     continue;
                 }
+
+                $expanded++;
 
                 foreach ($third->list($request, new ContextQuery(null, [$parent, $item], null, 5))->items as $leaf) {
                     $results[] = new SearchResult(
                         $second->key().':'.$item->id.'/'.$third->key().':'.$leaf->id,
                         $item->name.' · '.$leaf->name,
-                        $this->switchUrl($from, [$second->key() => $item->id, $third->key() => $leaf->id]),
-                        $second->label().' · '.$parent->name,
+                        $this->switchUrl($from, [...$select, $third->key() => $leaf->id]),
+                        $hint,
                     );
                 }
             }
         }
 
         return array_slice($results, 0, max($limit, 1) * 3);
+    }
+
+    /**
+     * The level-1 items whose level 2 is searched: the current one first, then the
+     * person's others, at most {@see GOTO_PARENTS}.
+     *
+     * @return list<ContextItem>
+     */
+    private function parents(Request $request, ContextLevel $top, ?ContextItem $current): array
+    {
+        $parents = $current instanceof ContextItem ? [$current->id => $current] : [];
+
+        foreach ($top->list($request, new ContextQuery(null, [], null, self::GOTO_PARENTS))->items as $item) {
+            if (count($parents) >= self::GOTO_PARENTS) {
+                break;
+            }
+
+            $parents[$item->id] ??= $item;
+        }
+
+        return array_values($parents);
     }
 
     /** @param array<string, string> $select */

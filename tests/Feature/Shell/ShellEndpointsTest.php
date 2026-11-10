@@ -75,6 +75,17 @@ it('validates the name and refuses creating under someone else\'s parent', funct
     $this->projects->assertNothingCreated();
 });
 
+it('offers no create, and refuses one, when the level says this person cannot create here', function (): void {
+    $this->projects->creatable(false);
+
+    $this->assertShell($this->get('/orgs/cbox/projects/webshop', inertiaVisit()))
+        ->assertCanCreate('organization')
+        ->assertCanCreate('project', false);
+
+    $this->postJson('/shell/context/project?ancestors[organization]=org_1', ['name' => 'Payments'])->assertForbidden();
+    $this->projects->assertNothingCreated();
+});
+
 it('offers no create for a level that cannot create', function (): void {
     $readOnly = new class implements ContextLevel
     {
@@ -176,6 +187,29 @@ it('answers "Go to" with organizations and level 2 · 3 combinations as switch l
     $this->get($orgs[0]['url'])->assertRedirect('/orgs/acme/settings');
 });
 
+it('finds projects across all the person\'s organizations, naming the organization', function (): void {
+    $items = $this->getJson('/shell/search?q=store&group=goto&context[organization]=org_1&from=/orgs/cbox/projects/webshop/environments/production/deployments')
+        ->assertOk()->json('groups.0.items');
+
+    expect(array_column($items, 'title'))->toBe(['Storefront', 'Storefront · Staging', 'Storefront · Production'])
+        ->and($items[0]['subtitle'])->toBe('Project · Acme');
+
+    $this->get($items[0]['url'])->assertRedirect('/orgs/acme/projects/storefront/environments/production/deployments');
+    $this->get($items[1]['url'])->assertRedirect('/orgs/acme/projects/storefront/environments/staging/deployments');
+});
+
+it('bounds "Go to": only the first project hits are expanded into environments', function (): void {
+    foreach (range(1, 6) as $n) {
+        $this->projects->with(new ContextItem("prj_x{$n}", "Shop {$n}", "shop-{$n}"), 'org_1');
+        $this->environments->with(new ContextItem("env_x{$n}", 'Live', 'live'), "prj_x{$n}");
+    }
+
+    $items = $this->getJson('/shell/search?q=shop&group=goto&limit=10&context[organization]=org_1')->json('groups.0.items');
+    $expanded = array_filter(array_column($items, 'title'), static fn (string $t): bool => str_contains($t, ' · '));
+
+    expect(count($expanded))->toBe(4); // Webshop (2 environments) + Shop 1 + Shop 2
+});
+
 it('answers every server group without a group filter, and leaves out one that fails', function (): void {
     Console::shell()->search((new FakeSearchProvider)->failWith(new RuntimeException('search is down')));
 
@@ -224,15 +258,15 @@ it('has no bell endpoint without a source', function (): void {
 it('saves preferences per person and reads them back before first paint', function (): void {
     $response = $this->patchJson('/shell/preferences', ['theme' => 'dark', 'railPinned' => true, 'helpOpen' => false])
         ->assertNoContent()
-        ->assertCookie(CookieShellPreferences::THEME, 'dark')
-        ->assertCookie(CookieShellPreferences::RAIL, '1')
-        ->assertCookie(CookieShellPreferences::HELP, '0');
+        ->assertPlainCookie(CookieShellPreferences::THEME, 'dark')
+        ->assertPlainCookie(CookieShellPreferences::RAIL, '1')
+        ->assertPlainCookie(CookieShellPreferences::HELP, '0');
 
     $cookie = $response->getCookie(CookieShellPreferences::RAIL, false);
     expect($cookie?->isHttpOnly())->toBeFalse()->and($cookie?->getSameSite())->toBe('lax');
 
     $this->patchJson('/shell/preferences', ['helpOpen' => true])
-        ->assertCookie(CookieShellPreferences::HELP, '1')
+        ->assertPlainCookie(CookieShellPreferences::HELP, '1')
         ->assertCookieMissing(CookieShellPreferences::THEME);
 
     $this->patchJson('/shell/preferences', ['theme' => 'neon'])->assertUnprocessable();

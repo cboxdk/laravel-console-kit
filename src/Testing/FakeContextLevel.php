@@ -36,6 +36,8 @@ class FakeContextLevel implements ContextLevel, CreatesContextItems
     /** @var list<array{name: string, ancestors: list<string>}> */
     private array $created = [];
 
+    private bool $creatable = true;
+
     /** @var (Closure(ContextItem, list<ContextItem>): string)|null */
     private ?Closure $url = null;
 
@@ -165,6 +167,19 @@ class FakeContextLevel implements ContextLevel, CreatesContextItems
     public function settingsUrl(ContextItem $item, array $ancestors): string
     {
         return $this->url($item, $ancestors).'/settings';
+    }
+
+    /** Whether "New …" is offered (default yes). */
+    public function creatable(bool $creatable = true): static
+    {
+        $this->creatable = $creatable;
+
+        return $this;
+    }
+
+    public function canCreate(Request $request, array $ancestors): bool
+    {
+        return $this->creatable;
     }
 
     public function create(Request $request, string $name, array $ancestors): CreatedContextItem

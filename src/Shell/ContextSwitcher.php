@@ -19,8 +19,9 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
  *    keep an item with the same name if the new parent has one, else its first item
  *    ("Production" stays "Production" when switching project).
  * 2. When the page the switch came from carries the switched level in its URL and has no
- *    other parameters, it is rebuilt with the new slugs: the same page in the new context.
- * 3. A page with any parameter that is not a context level shows one record. It falls
+ *    other required parameters, it is rebuilt with the new slugs: the same page in the new
+ *    context, with its optional parameters (`{tab?}`) and its query string.
+ * 3. A page with a required parameter that is not a context level shows one record. It falls
  *    back to that area's list, so an entity id is never carried into another context.
  * 4. Otherwise the person lands on the deepest selected item's own start page.
  */
@@ -86,14 +87,14 @@ class ContextSwitcher
             $items[] = $item;
         }
 
-        return $this->target($route, $levels, $items, $first);
+        return $this->target($fromRequest, $route, $levels, $items, $first);
     }
 
     /**
      * @param  list<ContextLevel>  $levels
      * @param  list<ContextItem>  $items
      */
-    private function target(?Route $route, array $levels, array $items, int $switched): SwitchResult
+    private function target(?Request $fromRequest, ?Route $route, array $levels, array $items, int $switched): SwitchResult
     {
         $deepest = count($items) - 1;
         $home = new SwitchResult(
@@ -112,18 +113,27 @@ class ContextSwitcher
             $contextParameters[$level->routeParameter()] = isset($items[$index]) ? $items[$index]->routeKey : null;
         }
 
-        $entityPage = array_diff(ShellUrls::parameterNames($route), array_keys($contextParameters)) !== [];
+        // Only a required parameter that is not a context level names a record; an
+        // optional one (`{tab?}`) is a view of the same page and is carried over.
+        $entityPage = array_diff(ShellUrls::requiredParameters($route), array_keys($contextParameters)) !== [];
 
         if (! $entityPage) {
-            $url = ShellUrls::toRoute($route, $this->parametersFor($route, $contextParameters));
+            $carried = array_diff_key(ShellUrls::rawParameters($route), $contextParameters);
+            $url = ShellUrls::toRoute($route, [...$carried, ...$this->parametersFor($route, $contextParameters)]);
 
-            return $url === null ? $home : new SwitchResult($url, SwitchResult::SAME_PAGE, $items);
+            if ($url === null) {
+                return $home;
+            }
+
+            $query = $fromRequest?->getQueryString();
+
+            return new SwitchResult($query !== null && $query !== '' ? $url.'?'.$query : $url, SwitchResult::SAME_PAGE, $items);
         }
 
         $fallback = $this->shell->fallbackRouteFor($route);
         $list = $fallback !== null ? $this->router->getRoutes()->getByName($fallback) : null;
 
-        if (! $list instanceof Route || array_diff(ShellUrls::parameterNames($list), array_keys($contextParameters)) !== []) {
+        if (! $list instanceof Route || array_diff(ShellUrls::requiredParameters($list), array_keys($contextParameters)) !== []) {
             return $home;
         }
 
@@ -171,7 +181,7 @@ class ContextSwitcher
      * A GET request for the page the switch came from, matched to its route, carrying the
      * real request's user and session. Null when the path matches no route.
      */
-    private function requestFor(Request $request, string $from): ?Request
+    public function requestFor(Request $request, string $from): ?Request
     {
         $path = ShellUrls::samePath($from);
 

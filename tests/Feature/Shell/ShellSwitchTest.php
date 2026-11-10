@@ -5,7 +5,9 @@ declare(strict_types=1);
 use Cbox\Console\Kit\Facades\Console;
 use Cbox\Console\Kit\Shell\CookieShellPreferences;
 use Cbox\Console\Kit\Shell\SwitchResult;
+use Illuminate\Auth\GenericUser;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
 
 beforeEach(function (): void {
     shellApp();
@@ -111,15 +113,45 @@ it('redirects an Inertia or browser switch with 303, and supports GET links from
         ->assertStatus(303)->assertRedirect('/orgs/acme/settings');
 });
 
-it('remembers the landing url as the last context', function (): void {
-    $this->postJson('/shell/switch', ['select' => ['organization' => 'org_2'], 'from' => '/orgs/cbox/settings'])
-        ->assertCookie(CookieShellPreferences::LAST_CONTEXT, '/orgs/acme/settings');
+it('remembers the landing url as the last context, for this person only', function (): void {
+    $response = $this->postJson('/shell/switch', ['select' => ['organization' => 'org_2'], 'from' => '/orgs/cbox/settings']);
+    $value = (string) $response->getCookie(CookieShellPreferences::LAST_CONTEXT)?->getValue();
 
-    $request = Request::create('/', 'GET', [], [CookieShellPreferences::LAST_CONTEXT => '/orgs/acme/settings']);
-    expect(Console::shell()->preferenceStore()->lastContext($request))->toBe('/orgs/acme/settings');
+    expect($value)->toEndWith('|/orgs/acme/settings')
+        ->and($response->getCookie(CookieShellPreferences::LAST_CONTEXT, false)?->isHttpOnly())->toBeTrue();
 
-    $evil = Request::create('/', 'GET', [], [CookieShellPreferences::LAST_CONTEXT => '//evil.example']);
-    expect(Console::shell()->preferenceStore()->lastContext($evil))->toBeNull();
+    $store = Console::shell()->preferenceStore();
+    $mine = Request::create('/', 'GET', [], [CookieShellPreferences::LAST_CONTEXT => $value]);
+    $mine->setUserResolver(fn () => new GenericUser(['id' => 'usr_1']));
+    expect($store->lastContext($mine))->toBe('/orgs/acme/settings');
+
+    // After "Switch account", the next person in this browser does not land on it.
+    $theirs = Request::create('/', 'GET', [], [CookieShellPreferences::LAST_CONTEXT => $value]);
+    $theirs->setUserResolver(fn () => new GenericUser(['id' => 'usr_2']));
+    expect($store->lastContext($theirs))->toBeNull();
+
+    $evil = Request::create('/', 'GET', [], [CookieShellPreferences::LAST_CONTEXT => strstr($value, '|', true).'|//evil.example']);
+    $evil->setUserResolver(fn () => new GenericUser(['id' => 'usr_1']));
+    expect($store->lastContext($evil))->toBeNull();
+
+    $legacy = Request::create('/', 'GET', [], [CookieShellPreferences::LAST_CONTEXT => '/orgs/acme/settings']);
+    $legacy->setUserResolver(fn () => new GenericUser(['id' => 'usr_1']));
+    expect($store->lastContext($legacy))->toBeNull();
+});
+
+it('keeps an optional parameter and the query string when staying on the same page', function (): void {
+    Route::middleware(['web', 'auth'])->get('/orgs/{org}/members/{tab?}', fn () => 'ok')->name('members.index');
+
+    expect(switchTo(['organization' => 'org_2'], '/orgs/cbox/members/invites?sort=name'))
+        ->toBe(['url' => '/orgs/acme/members/invites?sort=name', 'resolution' => SwitchResult::SAME_PAGE]);
+});
+
+it('falls back to the resource\'s index route before any other page of the resource', function (): void {
+    // deployments.create is a nav page listed before the index here; the list still wins.
+    Console::nav()->area('deployments')->page('deployments.create', 'New deployment', order: 1);
+
+    expect(switchTo(['project' => 'prj_2'], '/orgs/cbox/projects/webshop/environments/production/deployments/dep_9')['url'])
+        ->toBe('/orgs/cbox/projects/api/environments/staging/deployments');
 });
 
 it('needs a signed-in person', function (): void {
