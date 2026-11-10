@@ -22,6 +22,7 @@ use Illuminate\Routing\Route;
 use Illuminate\Routing\Router;
 use InvalidArgumentException;
 use LogicException;
+use Throwable;
 
 /**
  * Describes the shell once, in a service provider, and builds the `shell` prop for each
@@ -94,6 +95,16 @@ class ShellBuilder
 
     /** @var string|(Closure(Request): ?string)|null */
     private string|Closure|null $palettePlaceholder = null;
+
+    /** @var array<string, mixed>|null */
+    private ?array $account = null;
+
+    /** Route names the account menu uses when the app does not say (laravel-id-client conventions). */
+    public const DEFAULT_PROFILE_ROUTE = 'profile';
+
+    public const DEFAULT_SWITCH_ACCOUNT_ROUTE = 'login.switch';
+
+    public const DEFAULT_SIGN_OUT_ROUTE = 'logout';
 
     public function __construct(
         private readonly NavRegistry $nav,
@@ -266,6 +277,40 @@ class ShellBuilder
         return $this;
     }
 
+    /**
+     * The account menu's links (spec §10). Each URL is a route name (built with the current
+     * page's parameters), a `/path` or `https://` URL, or a closure over the request that
+     * returns one; null keeps the default, false hides the row.
+     *
+     * Defaults when not given:
+     *  - profile: laravel-id-client's `IdentityClient::profileUrl()` (Cbox ID's Profile and
+     *    security page, built from config, no request), else the `profile` route;
+     *  - switch account: the `login.switch` route;
+     *  - sign out: the `logout` route, as a POST.
+     *
+     * A default that does not resolve is left out, and so is `account` when nothing does.
+     *
+     * @param  string|false|(Closure(Request): ?string)|null  $profileUrl
+     * @param  string|false|(Closure(Request): ?string)|null  $switchAccountUrl
+     * @param  string|false|(Closure(Request): ?string)|null  $signOutUrl
+     * @param  'get'|'post'  $signOutMethod
+     * @param  array<string, string>  $languages  code => label
+     * @param  array<string, string>  $formats  code => label
+     */
+    public function account(
+        string|false|Closure|null $profileUrl = null,
+        string|false|Closure|null $switchAccountUrl = null,
+        string|false|Closure|null $signOutUrl = null,
+        string $signOutMethod = 'post',
+        ?string $signedInWith = null,
+        array $languages = [],
+        array $formats = [],
+    ): static {
+        $this->account = compact('profileUrl', 'switchAccountUrl', 'signOutUrl', 'signOutMethod', 'signedInWith', 'languages', 'formats');
+
+        return $this;
+    }
+
     /** @return list<ContextLevel> */
     public function contextLevels(): array
     {
@@ -422,7 +467,92 @@ class ShellBuilder
                 : '/apps/catalog?include=available')),
             banner: $this->buildBanner($request, $context),
             preferences: $this->preferences->read($request),
+            account: $this->buildAccount($request, $current),
         );
+    }
+
+    private function buildAccount(Request $request, ?Route $current): ShellAccount
+    {
+        $config = $this->account ?? [];
+        $method = ($config['signOutMethod'] ?? 'post') === 'get' ? 'get' : 'post';
+        $signedInWith = $config['signedInWith'] ?? null;
+        $languages = $config['languages'] ?? [];
+        $formats = $config['formats'] ?? [];
+
+        return new ShellAccount(
+            profileUrl: $this->accountUrl($config['profileUrl'] ?? null, $request, $current, fn (): ?string => $this->cboxIdProfileUrl() ?? $this->routeUrl(self::DEFAULT_PROFILE_ROUTE, $current)),
+            switchAccountUrl: $this->accountUrl($config['switchAccountUrl'] ?? null, $request, $current, fn (): ?string => $this->routeUrl(self::DEFAULT_SWITCH_ACCOUNT_ROUTE, $current)),
+            signOutUrl: $this->accountUrl($config['signOutUrl'] ?? null, $request, $current, fn (): ?string => $this->routeUrl(self::DEFAULT_SIGN_OUT_ROUTE, $current)),
+            signOutMethod: $method,
+            signedInWith: is_string($signedInWith) && $signedInWith !== '' ? $signedInWith : null,
+            languages: is_array($languages) ? self::stringMap($languages) : [],
+            formats: is_array($formats) ? self::stringMap($formats) : [],
+        );
+    }
+
+    /**
+     * @param  Closure(): ?string  $default
+     */
+    private function accountUrl(mixed $target, Request $request, ?Route $current, Closure $default): ?string
+    {
+        if ($target === false) {
+            return null;
+        }
+
+        if ($target instanceof Closure) {
+            $target = $target($request);
+        }
+
+        if (! is_string($target) || $target === '') {
+            return $default();
+        }
+
+        if ($this->router->has($target)) {
+            return $this->routeUrl($target, $current);
+        }
+
+        return ShellUrls::samePath($target) ?? (str_starts_with($target, 'https://') ? $target : null);
+    }
+
+    private function routeUrl(string $name, ?Route $current): ?string
+    {
+        return $this->router->has($name) ? ShellUrls::route($this->router, $name, $current) : null;
+    }
+
+    /** Cbox ID's Profile and security page, when laravel-id-client is installed and configured. */
+    private function cboxIdProfileUrl(): ?string
+    {
+        $class = 'Cbox\\Id\\Client\\IdentityClient';
+
+        if (! class_exists($class) || ! app()->bound($class)) {
+            return null;
+        }
+
+        try {
+            $client = app($class);
+            $url = is_object($client) && method_exists($client, 'profileUrl') ? $client->profileUrl() : null;
+        } catch (Throwable) {
+            return null;
+        }
+
+        return is_string($url) && str_starts_with($url, 'https://') ? $url : null;
+    }
+
+    /**
+     * @param  array<mixed>  $map
+     * @return array<string, string>
+     */
+    private static function stringMap(array $map): array
+    {
+        $out = [];
+
+        foreach ($map as $code => $label) {
+            if (is_string($label) && $label !== '') {
+                $out[(string) $code] = $label;
+            }
+        }
+
+        return $out;
     }
 
     private function resolveApp(): ShellApp

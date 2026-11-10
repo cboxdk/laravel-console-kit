@@ -23,6 +23,7 @@ readonly class Shell
         public ShellApps $apps = new ShellApps,
         public ?ShellBanner $banner = null,
         public ShellPreferences $preferences = new ShellPreferences,
+        public ?ShellAccount $account = null,
     ) {}
 
     /** @return array<string, mixed> */
@@ -38,6 +39,10 @@ readonly class Shell
             'notifications' => $this->notifications->toArray(),
             'apps' => $this->apps->toArray(),
         ];
+
+        if ($this->account instanceof ShellAccount && ! $this->account->isEmpty()) {
+            $out['account'] = $this->account->toArray();
+        }
 
         if ($this->banner instanceof ShellBanner) {
             $out['banner'] = $this->banner->toArray();

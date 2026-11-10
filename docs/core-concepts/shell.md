@@ -25,6 +25,10 @@ type Shell = {
   help: { enabled: boolean; topic?: string; sessionUrl?: string; portalUrl?: string; updatesUrl?: string };
   notifications: { enabled: false } | { enabled: true; unread: number; url: string };
   apps: { catalogUrl: string };
+  account?: {                    // the account menu (§10); a row without its URL is hidden
+    profileUrl?: string; switchAccountUrl?: string; signOutUrl?: string; signOutMethod?: 'get';
+    signedInWith?: string; languages?: { code: string; label: string }[]; formats?: { code: string; label: string }[];
+  };
   banner?: { kind: 'sandbox' | 'impersonation' | 'notice'; text: string; action?: { label: string; href: string; url: string } };
   preferences: { theme: 'system' | 'light' | 'dark'; locale: string; railPinned: boolean; helpOpen: boolean };
 };
@@ -68,6 +72,7 @@ the name cbox-ui's types use.
 | `help` | `->help(HelpConfig)` and `->helpTopic(fn)`. Disabled without a config. |
 | `notifications` | `{enabled: false}` without a source: the bell is not rendered at all. |
 | `apps.catalogUrl` | `->appCatalogUrl()`, else laravel-id-client's `cbox-id.apps.catalog`, else `/apps/catalog`, with `?include=available` so the switcher also gets the apps the organization does not have yet. |
+| `account` | `->account(...)`, else Cbox ID's Profile and security page (laravel-id-client's `IdentityClient::profileUrl()`, from config, no request) or the `profile` route, the `login.switch` route and the `logout` route (POST). Left out when nothing resolves. |
 | `banner` | `->banner(fn)` wins. Otherwise a sandbox strip when the deepest current item has `testData: true`, with the text from `->sandboxText()`. |
 | `preferences` | `ShellPreferenceStore` (cookies by default), the app locale. |
 
@@ -204,6 +209,22 @@ Console::shellHome();
 
 The default store keeps it in an encrypted, HttpOnly cookie with a fingerprint of the
 person's id. After "Switch account", the next person in that browser does not inherit it.
+
+## The account menu
+
+```php
+Console::shell()->account(
+    profileUrl: fn (Request $request) => CboxId::profileUrl($request->fullUrl()),  // route name, /path, https:// URL or closure
+    switchAccountUrl: 'login.switch',
+    signOutUrl: 'logout',              // POSTed unless signOutMethod: 'get'
+    signedInWith: 'Signed in with Cbox ID',
+    languages: ['en' => 'English', 'da' => 'Dansk'],
+);
+```
+
+Every argument is optional. A URL left `null` keeps its default, `false` hides the row. A
+route name is built with the current page's parameters. Anything that is not a route, a
+same-origin path or an `https://` URL is dropped.
 
 ## Palette actions
 
