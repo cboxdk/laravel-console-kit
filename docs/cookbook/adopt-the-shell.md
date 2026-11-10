@@ -20,7 +20,7 @@ A checklist for moving an app onto the one shell.
    `->actions()`, `->help()`, `->helpTopic()`, `->notifications()` when the app has
    product events.
 5. **Routes.** `Console::shellRoutes()` in `routes/web.php`; `console.shell` on the page
-   routes; laravel-id-client's `cbox-id.organization` on the routes under `/orgs/{org}`.
+   routes; laravel-id-client's `cbox-id.org-url` on the routes under `/orgs/{org}`.
 6. **Render** cbox-ui's `CboxShell` from the persistent layout with `props.shell`.
 7. **Delete** the app's copied `shared-shell.css`, `app-switcher.ts`, `Shell.tsx`,
    `service-marks.json` and `chrome/*`.

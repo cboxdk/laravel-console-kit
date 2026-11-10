@@ -114,7 +114,7 @@ Clicking an environment in the cascade posts both levels:
 `select[project]=prj_2&select[environment]=env_5`.
 
 The organization's token follows the URL. That is laravel-id-client's job: its
-`cbox-id.organization` middleware re-binds the token when the URL's organization differs
+`cbox-id.org-url` middleware re-binds the token when the URL's organization differs
 from the token's.
 
 ## Palette search
