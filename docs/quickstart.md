@@ -25,7 +25,7 @@ public function boot(): void
 {
     Console::nav()->area('deployments', 'Deployments', 'rocket', 20)
         ->page('deployments.index', 'Deployments')
-        ->page('logs.index', 'Logs');
+        ->page('logs.index', 'Logs', can: 'view-logs');
 
     Console::shell()
         ->app('infra', 'Cbox Infra', '/orgs')
@@ -45,6 +45,7 @@ public function boot(): void
 ```php
 // routes/web.php
 Console::shellRoutes();
+Console::shellHome();   // `/` lands on the person's last context
 ```
 
 ## 3. Share the prop on your pages

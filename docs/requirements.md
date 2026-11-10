@@ -17,7 +17,7 @@ Optional:
 
 | Package | Why |
 |---|---|
-| `inertiajs/inertia-laravel` (`^2.0 \|\| ^3.0`) | `console.shell` shares the `shell` prop lazily with every Inertia page. Without it, the prop is shared with Blade views as `$shell`. |
+| `inertiajs/inertia-laravel` (`^2.0 \|\| ^3.0`) | `console.shell` shares the `shell` prop lazily with every Inertia page. Blade views get it as `$shell` either way. |
 
 The kit has no other runtime dependency. It does not depend on `cboxdk/laravel-id-client`;
 that package plugs its `OrganizationLevel` into the kit when both are installed.

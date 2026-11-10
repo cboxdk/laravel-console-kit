@@ -99,6 +99,11 @@ Rules:
 Add it to a level to offer "New …". The menu asks only for a name.
 
 ```php
+public function canCreate(Request $request, array $ancestors): bool
+{
+    return $request->user()->can('create', [Project::class, $ancestors[0]->id]);
+}
+
 public function create(Request $request, string $name, array $ancestors): CreatedContextItem
 {
     $project = Project::create(['organization_id' => $ancestors[0]->id, 'name' => $name]);
@@ -107,8 +112,12 @@ public function create(Request $request, string $name, array $ancestors): Create
 }
 ```
 
-`detailsUrl` is the page with the "Finish setting up {name}" section. `id` is null only
-when the item does not exist yet because the person is sent somewhere to create it.
+`detailsUrl` is the page with the "Finish setting up {name}" section.
+
+"New …" shows only when `canCreate()` is true, and the create endpoint answers 403
+otherwise. Say no when the person cannot create here and now (no permission, a missing
+API key). Never send them to another product to create it instead (spec §5.7).
+`canCreate()` runs while the prop is built, so it must stay local.
 
 ## SearchProvider
 
@@ -153,7 +162,7 @@ Resolve it from config only. The browser calls the Assistant after first paint.
 ## ShellPreferenceStore
 
 Bound to `CookieShellPreferences`. Bind your own to keep theme, rail pin, Help open and
-the last context elsewhere:
+the last context elsewhere. `lastContext()` must only ever return this person's own:
 
 ```php
 $this->app->bind(ShellPreferenceStore::class, MyPreferences::class);
