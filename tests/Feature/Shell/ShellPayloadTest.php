@@ -65,7 +65,7 @@ it('builds the nav from the registry, filtered by features, with the active area
         ->assertActiveArea('deployments', 'logs.index')
         ->assertPath('nav.areas.1.href', '/orgs/cbox/projects/webshop/environments/production/deployments')
         ->assertPath('nav.areas.1.icon', 'rocket')
-        ->assertPath('nav.areas.1.pages.1', ['key' => 'logs.index', 'label' => 'Logs', 'href' => '/orgs/cbox/projects/webshop/environments/production/logs']);
+        ->assertPath('nav.areas.1.pages.1', ['key' => 'logs.index', 'label' => 'Logs', 'href' => '/orgs/cbox/projects/webshop/environments/production/logs', 'url' => '/orgs/cbox/projects/webshop/environments/production/logs']);
 
     Console::features()->register('billing', true);
 
@@ -159,7 +159,7 @@ it('takes the sandbox text from the app, and an app banner wins over the strip',
     Console::shell()->banner(fn () => new ShellBanner(BannerKind::Impersonation, 'You are acting as Ada', new ShellLink('Stop', '/impersonation/stop')));
 
     $this->assertShell($this->get('/orgs/cbox/projects/webshop/environments/sandbox/deployments', inertiaVisit()))
-        ->assertPath('banner', ['kind' => 'impersonation', 'text' => 'You are acting as Ada', 'action' => ['label' => 'Stop', 'href' => '/impersonation/stop']]);
+        ->assertPath('banner', ['kind' => 'impersonation', 'text' => 'You are acting as Ada', 'action' => ['label' => 'Stop', 'href' => '/impersonation/stop', 'url' => '/impersonation/stop']]);
 });
 
 it('resolves palette actions against the current route, and drops ones that cannot be built here', function (): void {

@@ -21,15 +21,23 @@ type Shell = {
   person: { id: string; name: string; initials: string; avatarUrl?: string };
   nav: { areas: NavArea[]; activeArea: string; activePage?: string };
   context: { levels: ContextLevel[]; switchUrl: string };
-  palette: { searchUrl: string; actions: PaletteAction[] };
+  palette: { searchUrl: string; actions: PaletteAction[]; placeholder?: string };
   help: { enabled: boolean; topic?: string; sessionUrl?: string; portalUrl?: string; updatesUrl?: string };
   notifications: { enabled: false } | { enabled: true; unread: number; url: string };
   apps: { catalogUrl: string };
-  banner?: { kind: 'sandbox' | 'impersonation' | 'notice'; text: string; action?: { label: string; href: string } };
+  banner?: { kind: 'sandbox' | 'impersonation' | 'notice'; text: string; action?: { label: string; href: string; url: string } };
   preferences: { theme: 'system' | 'light' | 'dark'; locale: string; railPinned: boolean; helpOpen: boolean };
 };
 
-type NavArea = { key: string; label: string; href: string; icon?: string; pages: { key: string; label: string; href: string }[] };
+type NavArea = { key: string; label: string; href: string; url: string; icon?: string; pages: NavPage[] };
+
+type NavPage = {
+  key: string; label: string;
+  href: string; url: string;  // the same URL; cbox-ui reads `url`
+  locked?: true;              // feature off, `lockedWhenOff`: links to the upgrade prompt
+  count?: number;             // badge, only when above 0
+  group?: string;             // heading inside the area's subnav
+};
 
 type ContextLevel = {
   key: string; label: string;
@@ -42,7 +50,8 @@ type PaletteAction = { id: string; label: string; url: string; icon?: string; ke
 ```
 
 `NavArea` and `PaletteAction` are not spelled out in the spec; the shapes above are what
-the kit sends.
+the kit sends. Links are sent as `href` and, since the release after 0.2.2, also as `url`,
+the name cbox-ui's types use.
 
 ### Where each part comes from
 
@@ -51,7 +60,9 @@ the kit sends.
 | `app` | `->app($key, $name, $homeUrl)`, else `config('app.name')` |
 | `person` | `->person(fn)`, else the authenticated user's id, `name` (or `email`), `avatar_url` |
 | `nav` | `Console::nav()` areas, pages gated by `Console::features()` and by the person's permission (`can:`, checked with `Gate::forUser($request->user())`). A page whose route cannot be built on this page (a required parameter is missing) is left out; an area with no pages is left out. `href` is the area's first page. |
-| `nav.activeArea` | The area holding the current route, else the area holding a page of the same resource (`deployments.show` → `deployments.index`). |
+| `nav` filter | `->navFilter(fn (NavPage $page, Request $request, array $context): bool)` runs last, per request. A page it rejects is left out everywhere. |
+| `nav.activeArea` | The area holding the current route. On a record page, the page `->listFallback()` names, else a page of the same resource (`deployments.show` → `deployments.index`), else the nearest parent route that is a nav page (`billing.coupons.show` → `billing.coupons`). |
+| `palette.placeholder` | `->palettePlaceholder('Search customers, invoices… or pages')`, a string or a closure over the request. Left out by default (cbox-ui says "Search or ask…"). |
 | `context.levels` | Each level's `current()`, outermost first, until one has none. |
 | `palette.actions` | `->actions()`. A route action takes the current route's parameters; one that cannot be built here is left out. |
 | `help` | `->help(HelpConfig)` and `->helpTopic(fn)`. Disabled without a config. |
@@ -108,6 +119,45 @@ Console::nav()->area('admin', 'Admin')->can('admin');   // the whole area
 `arguments` is a list, or a closure that gets the request and the current context
 (`list<ContextItem>`, outermost first). Keep the policy local: it runs on every page.
 
+When the app already has one access check per route, one filter on the builder does it
+for every page, instead of a `can:` on each:
+
+```php
+Console::shell()->navFilter(
+    fn (NavPage $page, Request $request, array $context): bool => app(RouteAccess::class)->allows($page->route),
+);
+```
+
+It runs after the page's feature and `can:` checks, and also for locked pages. An area
+left with no pages is left out.
+
+## Locked pages, counts and groups
+
+```php
+Console::nav()->area('catalog', 'Catalog', 'tag', 30)
+    // Feature off: shown with a lock, linking to the upgrade page (a route name or a /path).
+    ->page('billing.coupons', 'Coupons', feature: 'coupons', lockedWhenOff: true, upgradeUrl: 'billing.upgrade')
+    // A badge: an int, or a closure over the request and the context. Null or 0: no badge.
+    ->page('billing.drafts', 'Drafts', count: fn (Request $request, array $context) => Drafts::openCount($context));
+
+Console::nav()->area('settings', 'Settings', 'cog', 90)
+    ->page('settings.org', 'General', group: 'Organization')
+    ->page('settings.members', 'Members', group: 'Organization')
+    ->page('settings.project', 'General', group: 'Project')
+    ->page('settings.environment', 'API keys', group: 'Environment');
+```
+
+- **Locked.** Without `lockedWhenOff` a page whose feature is off is left out, as before.
+  With it, the page is sent with `locked: true`. Its link is `upgradeUrl` when that is a
+  route or a same-origin path, else the page's own route, so the page itself can show the
+  upgrade prompt (do not guard that route with `console.feature`, which answers 404). A
+  page the person may not open (`can:`, `navFilter`) is never shown, locked or not.
+- **Count.** Evaluated on every page render, so keep it cheap: a cached or precomputed
+  number. A locked page is never counted.
+- **Group.** A heading inside the area's subnav and the phone nav. Pages of one group are
+  sent together, in the order each group first appears; within a group they keep their
+  `order`.
+
 ## Switching
 
 `switch` takes `select` (level key → id) and `from` (the page's path). The URL is the
@@ -154,6 +204,19 @@ Console::shellHome();
 
 The default store keeps it in an encrypted, HttpOnly cookie with a fingerprint of the
 person's id. After "Switch account", the next person in that browser does not inherit it.
+
+## Palette actions
+
+```php
+Console::shell()->actions(fn (Request $request) => [
+    PaletteAction::route('deployments.create', 'New deployment', icon: 'plus'),
+    PaletteAction::route('members', 'Invite members', icon: 'users', fragment: 'invite'), // …/members#invite
+]);
+```
+
+A route action takes the current route's parameters; one that cannot be built here is
+left out. `fragment` is added as `#fragment`, and the action's id becomes
+`{route}#{fragment}`.
 
 ## Palette search
 

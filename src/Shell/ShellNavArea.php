@@ -5,7 +5,8 @@ declare(strict_types=1);
 namespace Cbox\Console\Kit\Shell;
 
 /**
- * A rail area on the wire. `href` is the area's first visible page; `pages` are its
+ * A rail area on the wire. `href` (also sent as `url`, the name cbox-ui reads) is the
+ * area's first visible page; `pages` are its
  * visible pages (the subnav shows only when there is more than one). `icon` is a name
  * the client maps to an icon component, never markup.
  */
@@ -22,10 +23,10 @@ readonly class ShellNavArea
         public ?string $icon = null,
     ) {}
 
-    /** @return array{key: string, label: string, href: string, icon?: string, pages: list<array{key: string, label: string, href: string}>} */
+    /** @return array{key: string, label: string, href: string, url: string, icon?: string, pages: list<array<string, mixed>>} */
     public function toArray(): array
     {
-        $out = ['key' => $this->key, 'label' => $this->label, 'href' => $this->href];
+        $out = ['key' => $this->key, 'label' => $this->label, 'href' => $this->href, 'url' => $this->href];
 
         if ($this->icon !== null) {
             $out['icon'] = $this->icon;

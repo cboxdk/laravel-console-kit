@@ -89,6 +89,12 @@ class ShellBuilder
     /** @var (Closure(Route): ?string)|null */
     private ?Closure $listFallback = null;
 
+    /** @var (Closure(NavPage, Request, list<ContextItem>): bool)|null */
+    private ?Closure $navFilter = null;
+
+    /** @var string|(Closure(Request): ?string)|null */
+    private string|Closure|null $palettePlaceholder = null;
+
     public function __construct(
         private readonly NavRegistry $nav,
         private readonly FeatureRegistry $features,
@@ -226,6 +232,36 @@ class ShellBuilder
     public function listFallback(Closure $resolver): static
     {
         $this->listFallback = $resolver;
+
+        return $this;
+    }
+
+    /**
+     * Which nav pages this person sees, decided per request: return false to leave a page
+     * out of the rail, the subnav, the phone nav and the palette. It runs after the page's
+     * own feature and `can:` checks, with the context the request is in (outermost first),
+     * so an app can reuse its route access check:
+     *
+     *     ->navFilter(fn (NavPage $page, Request $request) => app(RouteAccess::class)->allows($page->route))
+     *
+     * @param  (Closure(NavPage, Request, list<ContextItem>): bool)|null  $filter
+     */
+    public function navFilter(?Closure $filter): static
+    {
+        $this->navFilter = $filter;
+
+        return $this;
+    }
+
+    /**
+     * The palette search field's placeholder, e.g. "Search customers, invoices… or pages".
+     * A string, or a resolver per request. Default (null): cbox-ui's "Search or ask…".
+     *
+     * @param  string|(Closure(Request): ?string)|null  $placeholder
+     */
+    public function palettePlaceholder(string|Closure|null $placeholder): static
+    {
+        $this->palettePlaceholder = $placeholder;
 
         return $this;
     }
@@ -374,7 +410,7 @@ class ShellBuilder
             person: $this->resolvePerson($request),
             nav: $this->buildNav($request, $current, $context),
             context: new ShellContext($this->buildLevels($request, $context), route(self::ROUTE_SWITCH, [], false)),
-            palette: new ShellPalette($this->searchUrl($request, $context), $this->buildActions($request, $current)),
+            palette: new ShellPalette($this->searchUrl($request, $context), $this->buildActions($request, $current), $this->resolvePlaceholder($request)),
             help: $this->buildHelp($request),
             notifications: $this->notifications instanceof NotificationSource
                 ? ShellNotifications::enabled($this->notifications->unread($request), route(self::ROUTE_NOTIFICATIONS, [], false))
@@ -444,24 +480,43 @@ class ShellBuilder
             ? substr($currentName, 0, (int) strrpos($currentName, '.') + 1) : null;
 
         foreach ($this->nav->areas() as $area) {
-            if (! $this->visible($area, $gate, $request, $context)) {
+            if (! $this->featureOn($area) || ! $this->allowed($area, $gate, $request, $context)) {
                 continue;
             }
 
             $pages = [];
 
             foreach ($area->pages() as $page) {
-                if (! $this->visible($page, $gate, $request, $context)) {
+                $locked = ! $this->featureOn($page);
+
+                if ($locked && ! $page->lockedWhenOff) {
                     continue;
                 }
 
-                $href = ShellUrls::route($this->router, $page->route, $current);
+                if (! $this->allowed($page, $gate, $request, $context)) {
+                    continue;
+                }
+
+                if ($this->navFilter instanceof Closure && ! ($this->navFilter)($page, $request, $context->items)) {
+                    continue;
+                }
+
+                $href = $locked
+                    ? $this->upgradeHref($page, $current) ?? ShellUrls::route($this->router, $page->route, $current)
+                    : ShellUrls::route($this->router, $page->route, $current);
 
                 if ($href === null) {
                     continue;
                 }
 
-                $pages[] = new ShellNavPage($page->route, $page->label, $href);
+                $pages[] = new ShellNavPage(
+                    $page->route,
+                    $page->label,
+                    $href,
+                    $locked,
+                    $locked ? null : $this->countFor($page, $request, $context),
+                    $page->group,
+                );
 
                 if ($page->route === $currentName && $activeArea === '') {
                     $activeArea = $area->key;
@@ -476,27 +531,131 @@ class ShellBuilder
                 continue;
             }
 
-            $areas[] = new ShellNavArea($area->key, $area->label, $pages[0]->href, $pages, $area->icon);
+            $areas[] = new ShellNavArea($area->key, $area->label, $pages[0]->href, self::grouped($pages), $area->icon);
         }
 
-        if ($activeArea === '' && $prefixArea !== '') {
-            $activeArea = $prefixArea;
-            $activePage = $prefixPage;
+        // A record page (`coupons.show`) is not a nav page itself: light its list page and
+        // area. The app's list fallback wins, then a page of the same resource
+        // (`coupons.index`), then the nearest parent route that is a nav page (`coupons`).
+        if ($activeArea === '' && $current instanceof Route && $currentName !== null) {
+            $candidates = [];
+
+            if ($this->listFallback instanceof Closure) {
+                $fallback = ($this->listFallback)($current);
+
+                if (is_string($fallback) && $fallback !== '') {
+                    $candidates[] = $fallback;
+                }
+            }
+
+            [$activeArea, $activePage] = self::findPage($areas, $candidates) ?? [$prefixArea, $prefixPage];
+
+            if ($activeArea === '') {
+                [$activeArea, $activePage] = self::findPage($areas, self::parentRoutes($currentName)) ?? ['', null];
+            }
         }
 
         return new ShellNav($areas, $activeArea, $activePage);
     }
 
     /**
-     * Whether a nav area or page shows: its feature is active and the person may use its
-     * ability, checked with the arguments it declares (deny by default when the check fails).
+     * The first of `$names` that is a page in `$areas`, as [area key, page key].
+     *
+     * @param  list<ShellNavArea>  $areas
+     * @param  list<string>  $names
+     * @return array{0: string, 1: string}|null
      */
-    private function visible(NavArea|NavPage $entry, Gate $gate, Request $request, ResolvedContext $context): bool
+    private static function findPage(array $areas, array $names): ?array
     {
-        if ($entry->feature !== null && ! $this->features->active($entry->feature)) {
-            return false;
+        foreach ($names as $name) {
+            foreach ($areas as $area) {
+                foreach ($area->pages as $page) {
+                    if ($page->key === $name) {
+                        return [$area->key, $page->key];
+                    }
+                }
+            }
         }
 
+        return null;
+    }
+
+    /**
+     * The parents of a route name, nearest first: `billing.coupons.lines.show` gives
+     * `billing.coupons.lines` and `billing.coupons`. The top segment alone is only a parent
+     * of a two-segment name (`coupons.show` gives `coupons`), so an app's name prefix
+     * (`billing`) never lights a page for every route under it.
+     *
+     * @return list<string>
+     */
+    private static function parentRoutes(string $name): array
+    {
+        $parents = [];
+
+        while (str_contains($name, '.')) {
+            $name = substr($name, 0, (int) strrpos($name, '.'));
+
+            if ($parents !== [] && ! str_contains($name, '.')) {
+                break;
+            }
+
+            $parents[] = $name;
+        }
+
+        return $parents;
+    }
+
+    /**
+     * Pages of one group together, in the order each group first appears; pages without a
+     * group keep their place among them.
+     *
+     * @param  list<ShellNavPage>  $pages
+     * @return list<ShellNavPage>
+     */
+    private static function grouped(array $pages): array
+    {
+        $buckets = [];
+
+        foreach ($pages as $page) {
+            $buckets[$page->group ?? ''][] = $page;
+        }
+
+        return array_merge(...array_values($buckets));
+    }
+
+    private function upgradeHref(NavPage $page, ?Route $current): ?string
+    {
+        $target = $page->upgradeUrl;
+
+        if ($target === null || $target === '') {
+            return null;
+        }
+
+        if ($this->router->has($target)) {
+            return ShellUrls::route($this->router, $target, $current);
+        }
+
+        return ShellUrls::samePath($target) ?? (str_starts_with($target, 'https://') ? $target : null);
+    }
+
+    private function countFor(NavPage $page, Request $request, ResolvedContext $context): ?int
+    {
+        $count = $page->count instanceof Closure ? ($page->count)($request, $context->items) : $page->count;
+
+        return is_int($count) && $count > 0 ? $count : null;
+    }
+
+    private function featureOn(NavArea|NavPage $entry): bool
+    {
+        return $entry->feature === null || $this->features->active($entry->feature);
+    }
+
+    /**
+     * Whether the person may use a nav area's or page's ability, checked with the arguments
+     * it declares (deny by default when the check fails).
+     */
+    private function allowed(NavArea|NavPage $entry, Gate $gate, Request $request, ResolvedContext $context): bool
+    {
         if ($entry->ability === null) {
             return true;
         }
@@ -506,6 +665,15 @@ class ShellBuilder
             : $entry->abilityArguments;
 
         return $gate->allows($entry->ability, $arguments);
+    }
+
+    private function resolvePlaceholder(Request $request): ?string
+    {
+        $placeholder = $this->palettePlaceholder instanceof Closure
+            ? ($this->palettePlaceholder)($request)
+            : $this->palettePlaceholder;
+
+        return is_string($placeholder) && $placeholder !== '' ? $placeholder : null;
     }
 
     /** @return list<ShellContextLevel> */
