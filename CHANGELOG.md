@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased (suggested v0.2.5)
+
+### Fixed
+- Switching organization, project or environment from cbox-ui 0.10.3 and older did nothing: cbox-ui posted `{<level>: id, return_to}` and `/shell/switch` read only `select[]` and `from`, so it answered 404 "Nothing to switch to.". The endpoint now also reads that flat body when the request carries no `select` (only keys that name a declared level; `return_to` stands in for `from`, with the same same-origin check). `select`/`from` stays the contract and wins when both are sent; cbox-ui 0.10.4 sends it.
+
+### Deprecated
+- The flat switch body. It is accepted through 0.2.x and removed in 0.3.
+
+Backward compatible with 0.2.x.
+
 ## v0.2.4 — 2026-11-11
 
 ### Added

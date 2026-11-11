@@ -184,3 +184,31 @@ it('works for an app with one level (Work, Engage)', function (): void {
     expect(switchTo(['organization' => 'org_2'], '/orgs/cbox/settings')['url'])->toBe('/orgs/acme/settings')
         ->and(switchTo(['organization' => 'org_2'], '/orgs')['url'])->toBe('/orgs/acme');
 });
+
+it('accepts the flat body cbox-ui 0.10.3 and older post, with return_to', function (): void {
+    // Deprecated: `{<level>: id, return_to}` is read through 0.2.x so either cbox-ui works.
+    $this->postJson('/shell/switch', ['project' => 'prj_2', 'return_to' => '/orgs/cbox/projects/webshop/environments/production/logs'])
+        ->assertOk()
+        ->assertExactJson(['url' => '/orgs/cbox/projects/api/environments/staging/logs', 'resolution' => SwitchResult::SAME_PAGE]);
+
+    $this->post('/shell/switch', ['organization' => 'org_2', 'return_to' => '/orgs/cbox/settings'], ['X-Inertia' => 'true'])
+        ->assertStatus(303)->assertRedirect('/orgs/acme/settings');
+
+    $this->postJson('/shell/switch', ['project' => 'prj_1', 'environment' => 'env_2', 'return_to' => '/orgs/cbox/projects/api/environments/staging/deployments'])
+        ->assertOk()->assertJsonPath('url', '/orgs/cbox/projects/webshop/environments/sandbox/deployments');
+});
+
+it('prefers select and from over the flat body, and keeps refusing what it refused', function (): void {
+    // `select` wins; flat keys beside it are ignored.
+    $this->postJson('/shell/switch', ['select' => ['organization' => 'org_2'], 'organization' => 'org_404', 'from' => '/orgs/cbox/settings', 'return_to' => '/orgs/cbox'])
+        ->assertOk()->assertJsonPath('url', '/orgs/acme/settings');
+
+    // An empty `select` is still "nothing to switch to", not a fallback to flat keys.
+    $this->postJson('/shell/switch', ['select' => [], 'organization' => 'org_2', 'from' => '/orgs/cbox'])->assertNotFound();
+
+    // Flat keys that name no level, an unknown id, a foreign return_to.
+    $this->postJson('/shell/switch', ['galaxy' => 'g_1', 'return_to' => '/orgs/cbox'])->assertNotFound();
+    $this->postJson('/shell/switch', ['organization' => 'org_404', 'return_to' => '/orgs/cbox'])->assertNotFound();
+    $this->postJson('/shell/switch', ['organization' => 'org_2', 'return_to' => '//evil.example/orgs/cbox/settings'])
+        ->assertOk()->assertJsonPath('url', '/orgs/acme/projects/storefront/environments/staging');
+});

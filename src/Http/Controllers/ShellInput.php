@@ -33,6 +33,27 @@ final class ShellInput
         return $out;
     }
 
+    /**
+     * The top-level keys of the request that name one of `$keys`, each a non-empty string.
+     *
+     * @param  list<string>  $keys
+     * @return array<string, string>
+     */
+    public static function levels(Request $request, array $keys): array
+    {
+        $out = [];
+
+        foreach ($keys as $key) {
+            $id = $request->input($key);
+
+            if (is_string($id) && $id !== '' && strlen($id) <= 255) {
+                $out[$key] = $id;
+            }
+        }
+
+        return $out;
+    }
+
     public static function string(Request $request, string $key, int $max = 255): ?string
     {
         $value = $request->input($key);
