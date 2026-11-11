@@ -138,6 +138,74 @@ it('lights the list page and its area on a record page whose list has no .index'
         ->assertActiveArea('catalog', 'billing.coupons');
 });
 
+it('lights the parent list, never a sibling that only shares its prefix', function (): void {
+    Route::middleware(['web', 'auth', 'console.shell'])->group(static function (): void {
+        Route::get('/orgs/{org}/subscriptions', fn () => Inertia::render('Subscriptions'))->name('billing.subscriptions');
+        Route::get('/orgs/{org}/subscriptions/dunning', fn () => Inertia::render('Dunning'))->name('billing.subscriptions.dunning');
+        Route::get('/orgs/{org}/subscriptions/{subscription}', fn () => Inertia::render('Subscription'))->name('billing.subscriptions.show');
+        Route::get('/orgs/{org}/sub/{id}', fn () => Inertia::render('Sub'))->name('billing.sub.show');
+    });
+    app('router')->getRoutes()->refreshNameLookups();
+    // The dunning page comes first, so a string prefix match would pick it.
+    Console::nav()->area('subscriptions', 'Subscriptions', 'repeat', 40)
+        ->page('billing.subscriptions.dunning', 'Dunning')
+        ->page('billing.subscriptions', 'Subscriptions');
+
+    $this->assertShell($this->get('/orgs/cbox/subscriptions/sub_1', inertiaVisit()))
+        ->assertActiveArea('subscriptions', 'billing.subscriptions');
+
+    $this->assertShell($this->get('/orgs/cbox/subscriptions/dunning', inertiaVisit()))
+        ->assertActiveArea('subscriptions', 'billing.subscriptions.dunning');
+
+    // `billing.sub` is not a segment of `billing.subscriptions`.
+    $this->assertShell($this->get('/orgs/cbox/sub/x', inertiaVisit()))
+        ->assertPath('nav.activeArea', '');
+});
+
+it('falls back to the page sharing the most whole segments, the resource\'s index first', function (): void {
+    Route::middleware(['web', 'auth', 'console.shell'])->group(static function (): void {
+        Route::get('/orgs/{org}/plans/archived', fn () => Inertia::render('Archived'))->name('billing.plans.archived');
+        Route::get('/orgs/{org}/plans/all', fn () => Inertia::render('Plans'))->name('billing.plans.index');
+        Route::get('/orgs/{org}/plans/{plan}', fn () => Inertia::render('Plan'))->name('billing.plans.show');
+        Route::get('/orgs/{org}/plans/{plan}/prices/{price}', fn () => Inertia::render('Price'))->name('billing.plans.prices.show');
+    });
+    app('router')->getRoutes()->refreshNameLookups();
+    Console::nav()->area('catalog', 'Catalog', 'tag', 30)
+        ->page('billing.drafts', 'Drafts')
+        ->page('billing.plans.archived', 'Archived')
+        ->page('billing.plans.index', 'Plans');
+
+    // No `billing.plans` page: the `.index` sibling wins the tie with `archived`.
+    $this->assertShell($this->get('/orgs/cbox/plans/pln_1', inertiaVisit()))
+        ->assertActiveArea('catalog', 'billing.plans.index');
+
+    // Two levels down, the page sharing `billing.plans` still lights; `billing.drafts` shares only `billing`.
+    $this->assertShell($this->get('/orgs/cbox/plans/pln_1/prices/pri_1', inertiaVisit()))
+        ->assertActiveArea('catalog', 'billing.plans.index');
+});
+
+it('prefers the app\'s list fallback over a parent nav page', function (): void {
+    Route::middleware(['web', 'auth', 'console.shell'])->group(static function (): void {
+        Route::get('/orgs/{org}/subscriptions', fn () => Inertia::render('Subscriptions'))->name('billing.subscriptions');
+        Route::get('/orgs/{org}/subscriptions/dunning', fn () => Inertia::render('Dunning'))->name('billing.subscriptions.dunning');
+        Route::get('/orgs/{org}/subscriptions/{subscription}', fn () => Inertia::render('Subscription'))->name('billing.subscriptions.show');
+    });
+    app('router')->getRoutes()->refreshNameLookups();
+    Console::nav()->area('subscriptions', 'Subscriptions', 'repeat', 40)
+        ->page('billing.subscriptions', 'Subscriptions')
+        ->page('billing.subscriptions.dunning', 'Dunning');
+    Console::shell()->listFallback(fn (LaravelRoute $route): ?string => $route->getName() === 'billing.subscriptions.show' ? 'billing.subscriptions.dunning' : null);
+
+    $this->assertShell($this->get('/orgs/cbox/subscriptions/sub_1', inertiaVisit()))
+        ->assertActiveArea('subscriptions', 'billing.subscriptions.dunning');
+
+    // A fallback that is not a nav page here does not stop the default.
+    Console::shell()->listFallback(fn (): string => 'billing.nowhere');
+
+    $this->assertShell($this->get('/orgs/cbox/subscriptions/sub_1', inertiaVisit()))
+        ->assertActiveArea('subscriptions', 'billing.subscriptions');
+});
+
 it('lets the app\'s list fallback choose the page to light', function (): void {
     Console::nav()->area('catalog', 'Catalog', 'tag', 30)
         ->page('billing.drafts', 'Drafts')

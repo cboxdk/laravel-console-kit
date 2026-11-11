@@ -29,9 +29,12 @@ type Shell = {
     profileUrl?: string; switchAccountUrl?: string; signOutUrl?: string; signOutMethod?: 'get';
     signedInWith?: string; languages?: { code: string; label: string }[]; formats?: { code: string; label: string }[];
   };
-  banner?: { kind: 'sandbox' | 'impersonation' | 'notice'; text: string; action?: { label: string; href: string; url: string } };
+  banner?: Banner;               // the single strip cbox-ui 0.10.1 and older show
+  banners?: Banner[];            // every strip: the sandbox strip first, then the app's banners
   preferences: { theme: 'system' | 'light' | 'dark'; locale: string; railPinned: boolean; helpOpen: boolean };
 };
+
+type Banner = { kind: 'sandbox' | 'impersonation' | 'notice'; text: string; action?: { label: string; href: string; url: string } };
 
 type NavArea = { key: string; label: string; href: string; url: string; icon?: string; pages: NavPage[] };
 
@@ -65,7 +68,7 @@ the name cbox-ui's types use.
 | `person` | `->person(fn)`, else the authenticated user's id, `name` (or `email`), `avatar_url` |
 | `nav` | `Console::nav()` areas, pages gated by `Console::features()` and by the person's permission (`can:`, checked with `Gate::forUser($request->user())`). A page whose route cannot be built on this page (a required parameter is missing) is left out; an area with no pages is left out. `href` is the area's first page. |
 | `nav` filter | `->navFilter(fn (NavPage $page, Request $request, array $context): bool)` runs last, per request. A page it rejects is left out everywhere. |
-| `nav.activeArea` | The area holding the current route. On a record page, the page `->listFallback()` names, else a page of the same resource (`deployments.show` → `deployments.index`), else the nearest parent route that is a nav page (`billing.coupons.show` → `billing.coupons`). |
+| `nav.activeArea` | The area holding the current route. On a record page: the page `->listFallback()` names, else the nearest parent route that is a nav page (`billing.subscriptions.show` → `billing.subscriptions`), else the nav page sharing the most whole name segments, at least two (`deployments.show` → `deployments.index`; on a tie the `.index` page, then the shortest name). Names are compared by segment, never by string prefix: `billing.subscriptions.show` does not light `billing.subscriptions.dunning` while `billing.subscriptions` is a page, and `billing.other.show` never lights `billing`. |
 | `palette.placeholder` | `->palettePlaceholder('Search customers, invoices… or pages')`, a string or a closure over the request. Left out by default (cbox-ui says "Search or ask…"). |
 | `context.levels` | Each level's `current()`, outermost first, until one has none. |
 | `palette.actions` | `->actions()`. A route action takes the current route's parameters; one that cannot be built here is left out. |
@@ -73,7 +76,8 @@ the name cbox-ui's types use.
 | `notifications` | `{enabled: false}` without a source: the bell is not rendered at all. |
 | `apps.catalogUrl` | `->appCatalogUrl()`, else laravel-id-client's `cbox-id.apps.catalog`, else `/apps/catalog`, with `?include=available` so the switcher also gets the apps the organization does not have yet. |
 | `account` | `->account(...)`, else Cbox ID's Profile and security page (laravel-id-client's `IdentityClient::profileUrl()`, from config, no request) or the `profile` route, the `login.switch` route and the `logout` route (POST). Left out when nothing resolves. |
-| `banner` | `->banner(fn)` wins. Otherwise a sandbox strip when the deepest current item has `testData: true`, with the text from `->sandboxText()`. |
+| `banners` | The sandbox strip when the deepest current item has `testData: true` (text from `->sandboxText()`), then every banner `->banner(fn)` and `->addBanner(fn)` return, in the order they were added. An app banner never hides the strip; an app banner of kind `sandbox` replaces it. Left out when empty. |
+| `banner` | The first app banner, else the sandbox strip: what cbox-ui 0.10.1 and older read. |
 | `preferences` | `ShellPreferenceStore` (cookies by default), the app locale. |
 
 ## Lists load lazily
@@ -177,9 +181,9 @@ state; nothing goes into the session.
    query string are kept.
 3. **Entity pages fall back.** A route with a required parameter that is not a context
    level shows one record. It falls back to the list page of that resource: the route
-   `->listFallback(fn)` names, else the resource's `.index` route, else the nav page that
-   shares its route-name prefix. The record's id is never
-   carried into another context.
+   `->listFallback(fn)` names, else the resource's `.index` route, else the nearest parent
+   route that is a nav page, else the nav page sharing the most whole name segments (see
+   `nav.activeArea` above). The record's id is never carried into another context.
 4. **Otherwise** the person lands on the deepest selected item's own page (`url()`).
 
 `from` must be a same-origin path. Anything else is ignored. The landing URL is saved as
@@ -222,9 +226,28 @@ Console::shell()->account(
 );
 ```
 
+`signedInWith` can also be a closure over the request, for what only the session knows:
+
+```php
+Console::shell()->account(
+    signedInWith: fn (Request $request): string => 'Signed in with Cbox ID · '.$request->user()->environment_name,
+);
+```
+
 Every argument is optional. A URL left `null` keeps its default, `false` hides the row. A
 route name is built with the current page's parameters. Anything that is not a route, a
 same-origin path or an `https://` URL is dropped.
+
+## Banners
+
+```php
+Console::shell()
+    ->banner(fn (Request $request): ?ShellBanner => app(TaxHoldBanner::class)())  // replaces earlier banners
+    ->addBanner(fn (Request $request): array => [/* ShellBanner, … */]);          // adds one more resolver
+```
+
+A resolver returns a `ShellBanner`, a list of them, or null. The sandbox strip is added by
+the kit and stays beside them. `->banner(null)` clears the app's banners.
 
 ## Palette actions
 

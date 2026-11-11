@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Cbox\Console\Kit\Shell;
 
 /**
- * `shell.banner`: the strip under the header. The sandbox strip is added by the kit when
- * the current environment has `testData: true`; an app can send its own (impersonation,
- * a notice) and that one wins.
+ * One strip under the header, in `shell.banners` (and `shell.banner`). The sandbox strip
+ * is added by the kit when the current environment has `testData: true`; an app adds its
+ * own (impersonation, a notice) beside it.
  */
 readonly class ShellBanner
 {

@@ -150,16 +150,48 @@ it('adds the sandbox strip when the current environment has test data', function
         ->assertNoBanner();
 });
 
-it('takes the sandbox text from the app, and an app banner wins over the strip', function (): void {
+it('takes the sandbox text from the app, and keeps the strip beside an app banner', function (): void {
     Console::shell()->sandboxText(fn ($env) => "Test mode: {$env->name}");
 
     $this->assertShell($this->get('/orgs/cbox/projects/webshop/environments/sandbox/deployments', inertiaVisit()))
-        ->assertBanner('sandbox', 'Test mode: Sandbox');
+        ->assertBanner('sandbox', 'Test mode: Sandbox')
+        ->assertBanners(['sandbox']);
 
     Console::shell()->banner(fn () => new ShellBanner(BannerKind::Impersonation, 'You are acting as Ada', new ShellLink('Stop', '/impersonation/stop')));
 
     $this->assertShell($this->get('/orgs/cbox/projects/webshop/environments/sandbox/deployments', inertiaVisit()))
-        ->assertPath('banner', ['kind' => 'impersonation', 'text' => 'You are acting as Ada', 'action' => ['label' => 'Stop', 'href' => '/impersonation/stop', 'url' => '/impersonation/stop']]);
+        // `banner`, for cbox-ui 0.10.1 and older: the app banner wins, as before.
+        ->assertPath('banner', ['kind' => 'impersonation', 'text' => 'You are acting as Ada', 'action' => ['label' => 'Stop', 'href' => '/impersonation/stop', 'url' => '/impersonation/stop']])
+        // `banners`: the strip stays, under the header, and the app banner follows.
+        ->assertBanners(['sandbox', 'impersonation'])
+        ->assertHasBanner('sandbox', 'Test mode: Sandbox');
+});
+
+it('sends several app banners, from one resolver or several', function (): void {
+    Console::shell()
+        ->banner(fn () => [new ShellBanner(BannerKind::Notice, 'Invoices are on hold.'), null])
+        ->addBanner(fn () => new ShellBanner(BannerKind::Impersonation, 'You are acting as Ada'))
+        ->addBanner(fn () => null);
+
+    $this->assertShell($this->get('/orgs/cbox/projects/webshop/environments/sandbox/deployments', inertiaVisit()))
+        ->assertBanner('notice', 'Invoices are on hold.')
+        ->assertBanners(['sandbox', 'notice', 'impersonation']);
+
+    $this->assertShell($this->get('/orgs/cbox/projects/webshop/environments/production/deployments', inertiaVisit()))
+        ->assertBanners(['notice', 'impersonation']);
+
+    // An app that draws its own sandbox strip gets no second one.
+    Console::shell()->banner(fn () => new ShellBanner(BannerKind::Sandbox, 'Sandbox, by the app'));
+
+    $this->assertShell($this->get('/orgs/cbox/projects/webshop/environments/sandbox/deployments', inertiaVisit()))
+        ->assertBanners(['sandbox'])
+        ->assertHasBanner('sandbox', 'Sandbox, by the app');
+
+    // banner(null) clears every app banner.
+    Console::shell()->banner(null);
+
+    $this->assertShell($this->get('/orgs/cbox/projects/webshop/environments/production/deployments', inertiaVisit()))
+        ->assertNoBanner();
 });
 
 it('resolves palette actions against the current route, and drops ones that cannot be built here', function (): void {

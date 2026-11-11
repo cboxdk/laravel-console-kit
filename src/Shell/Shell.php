@@ -24,6 +24,13 @@ readonly class Shell
         public ?ShellBanner $banner = null,
         public ShellPreferences $preferences = new ShellPreferences,
         public ?ShellAccount $account = null,
+        /**
+         * Every strip under the header: the sandbox strip first, then the app's banners. Sent as
+         * `banners` when not empty; `banner` stays for cbox-ui 0.10.1 and older.
+         *
+         * @var list<ShellBanner>
+         */
+        public array $banners = [],
     ) {}
 
     /** @return array<string, mixed> */
@@ -46,6 +53,10 @@ readonly class Shell
 
         if ($this->banner instanceof ShellBanner) {
             $out['banner'] = $this->banner->toArray();
+        }
+
+        if ($this->banners !== []) {
+            $out['banners'] = array_map(static fn (ShellBanner $banner): array => $banner->toArray(), $this->banners);
         }
 
         $out['preferences'] = $this->preferences->toArray();

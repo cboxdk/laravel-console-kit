@@ -159,6 +159,7 @@ class AssertableShell
         return $this->assertPath('help.enabled', false);
     }
 
+    /** `shell.banner`, the single strip cbox-ui 0.10.1 and older show. */
     public function assertBanner(string $kind, ?string $text = null): static
     {
         $this->assertPath('banner.kind', $kind);
@@ -166,11 +167,37 @@ class AssertableShell
         return $text === null ? $this : $this->assertPath('banner.text', $text);
     }
 
+    /** No banner at all: neither `banner` nor `banners`. */
     public function assertNoBanner(): static
     {
         Assert::assertArrayNotHasKey('banner', $this->shell, 'The shell shows a banner.');
+        Assert::assertArrayNotHasKey('banners', $this->shell, 'The shell shows banners.');
 
         return $this;
+    }
+
+    /**
+     * The kinds in `shell.banners`, in order: `['sandbox', 'notice']`.
+     *
+     * @param  list<string>  $kinds
+     */
+    public function assertBanners(array $kinds): static
+    {
+        Assert::assertSame($kinds, array_map(static fn (mixed $banner): mixed => data_get($banner, 'kind'), $this->list('banners')), 'The shell\'s banners differ.');
+
+        return $this;
+    }
+
+    /** One of `shell.banners` has this kind (and text). */
+    public function assertHasBanner(string $kind, ?string $text = null): static
+    {
+        foreach ($this->list('banners') as $banner) {
+            if (data_get($banner, 'kind') === $kind && ($text === null || data_get($banner, 'text') === $text)) {
+                return $this;
+            }
+        }
+
+        Assert::fail("The shell has no {$kind} banner".($text === null ? '.' : " reading \"{$text}\"."));
     }
 
     public function assertAction(string $id, ?string $url = null): static

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Cbox\Console\Kit\Facades\Console;
 use Cbox\Console\Kit\Shell\ContextItem;
 use Cbox\Console\Kit\Shell\ContextQuery;
 use Cbox\Console\Kit\Shell\SearchQuery;
@@ -86,4 +87,24 @@ it('reads the shell from a first Inertia visit (the root view)', function (): vo
     app('view')->addLocation(__DIR__.'/../../views');
 
     $this->assertShell($this->get('/orgs/cbox'))->assertLevel('organization', 'org_1');
+});
+
+it('starts the next request with fresh scoped instances', function (): void {
+    shellApp();
+    $this->shellLevels(...shellLevels());
+    $answers = 0;
+    // A per-request access check, as an app binds one: its first answer sticks within one test.
+    app()->scoped('access.answer', function () use (&$answers): string {
+        return 'answer '.++$answers;
+    });
+    Console::nav()->area('reports', 'Reports', 'chart', 50)
+        ->page('logs.index', 'Logs', count: fn (): int => (int) substr((string) app('access.answer'), 7));
+
+    $count = fn (): mixed => collect($this->get('/orgs/cbox/projects/webshop/environments/production/logs', inertiaVisit())->json('props.shell.nav.areas'))
+        ->firstWhere('key', 'reports')['pages'][0]['count'];
+
+    expect($count())->toBe(1)
+        ->and($count())->toBe(1)
+        ->and($this->freshShellRequest())->toBe($this)
+        ->and($count())->toBe(2);
 });
