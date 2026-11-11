@@ -192,6 +192,13 @@ the last context (see below).
 Clicking an environment in the cascade posts both levels:
 `select[project]=prj_2&select[environment]=env_5`.
 
+**Deprecated body.** cbox-ui 0.10.3 and older post a flat body,
+`{organization: "org_2", return_to: "/orgs/cbox/settings"}`. The endpoint still reads it
+through 0.2.x, so an app works on either cbox-ui version: when the request has no
+`select`, top-level keys that name a declared level are the selection and `return_to`
+stands in for `from`. cbox-ui 0.10.4 posts `select` and `from`. The flat body goes away
+in 0.3.
+
 The organization's token follows the URL. That is laravel-id-client's job: its
 `cbox-id.org-url` middleware re-binds the token when the URL's organization differs
 from the token's.
