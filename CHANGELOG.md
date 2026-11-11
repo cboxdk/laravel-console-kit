@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.2.4 — 2026-11-11
 
 ### Added
 - `shell.banners`: every strip under the header, the sandbox strip first, then the app's banners. `->banner(fn)` may return a list, and `->addBanner(fn)` adds another resolver (a plugin's). An app banner (a tax hold) no longer hides the sandbox strip. `shell.banner` keeps the first app banner, else the strip, for cbox-ui 0.10.1 and older. `AssertableShell::assertBanners([...])` and `assertHasBanner($kind, $text)`; `assertNoBanner()` also checks `banners`.
