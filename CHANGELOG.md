@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.2.6 — 2026-11-11
 
 ### Added
 - The cbox-ui 0.11 shell (V6 phone layout, V7 create sheet). All optional; an app that declares none of it sends the same prop as before.
