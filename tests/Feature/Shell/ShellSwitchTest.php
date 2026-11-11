@@ -56,6 +56,22 @@ it('falls back from an entity page to its area list, never carrying the entity i
         ->toBe('/orgs/acme/projects/storefront/environments/production/logs');
 });
 
+it('falls back to the parent list, never a sibling page that shares its prefix', function (): void {
+    Route::middleware(['web', 'auth', 'console.shell'])->group(static function (): void {
+        $base = '/orgs/{org}/projects/{project}/environments/{environment}/subscriptions';
+        Route::get($base, fn () => 'list')->name('billing.subscriptions');
+        Route::get($base.'/dunning', fn () => 'dunning')->name('billing.subscriptions.dunning');
+        Route::get($base.'/{subscription}', fn () => 'one')->name('billing.subscriptions.show');
+    });
+    app('router')->getRoutes()->refreshNameLookups();
+    Console::nav()->area('subscriptions', 'Subscriptions', 'repeat', 40)
+        ->page('billing.subscriptions.dunning', 'Dunning')
+        ->page('billing.subscriptions', 'Subscriptions');
+
+    expect(switchTo(['project' => 'prj_2'], '/orgs/cbox/projects/webshop/environments/production/subscriptions/sub_1'))
+        ->toBe(['url' => '/orgs/cbox/projects/api/environments/staging/subscriptions', 'resolution' => SwitchResult::LIST_FALLBACK]);
+});
+
 it('uses the app\'s fallback route when it names one', function (): void {
     Console::shell()->listFallback(fn ($route) => $route->getName() === 'logs.show' ? 'deployments.index' : null);
 

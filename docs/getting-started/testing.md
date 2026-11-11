@@ -19,8 +19,27 @@ abstract class TestCase extends BaseTestCase
 }
 ```
 
-It gives you `shellLevels(...)` (sets the levels on the shell) and
-`assertShell($response)`.
+It gives you `shellLevels(...)` (sets the levels on the shell),
+`assertShell($response)` and `freshShellRequest()`.
+
+## A fresh request
+
+One HTTP test is one application. A binding registered with `$app->scoped()` (an access
+check, the current user, a per-request cache) is built once and then gives the first
+request's answer to every request after it, which production never does. Call
+`freshShellRequest()` before a request that must start clean:
+
+```php
+$this->actingAs($owner)->get('/orgs/cbox')->assertOk();
+
+$this->freshShellRequest()
+    ->actingAs($viewer)
+    ->get('/orgs/cbox')
+    ->assertOk();
+```
+
+It forgets the scoped instances (`$app->forgetScopedInstances()`) and returns the test case.
+Singletons, the shell's description and what `actingAs()` set stay.
 
 ## Fake levels
 
@@ -69,7 +88,9 @@ $this->assertShell($this->get('/orgs/cbox'))
     ->assertAction('deployments.create')
     ->assertHelpEnabled('orgs.show')
     ->assertNotificationsDisabled()
-    ->assertNoBanner()
+    ->assertBanners(['sandbox', 'notice'])   // `shell.banners`, in order
+    ->assertHasBanner('notice', 'Invoices are on hold.')
+    ->assertNoBanner()                       // neither `banner` nor `banners`
     ->assertPath('preferences.theme', 'system');
 ```
 

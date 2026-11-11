@@ -79,8 +79,8 @@ class ShellBuilder
 
     private ?NotificationSource $notifications = null;
 
-    /** @var (Closure(Request): ?ShellBanner)|null */
-    private ?Closure $banner = null;
+    /** @var list<Closure(Request): (ShellBanner|list<ShellBanner>|null)> */
+    private array $banners = [];
 
     /** @var string|(Closure(ContextItem): string)|null */
     private string|Closure|null $sandboxText = null;
@@ -202,13 +202,29 @@ class ShellBuilder
     }
 
     /**
-     * An app banner (impersonation, a notice). It wins over the sandbox strip.
+     * The app's banner (impersonation, a notice such as a tax hold), replacing any set before.
+     * The resolver returns one banner, a list of them, or null. App banners never hide the
+     * sandbox strip: `shell.banners` carries both. `shell.banner`, which cbox-ui 0.10.1 and
+     * older read, keeps the first app banner, else the strip.
      *
-     * @param  (Closure(Request): ?ShellBanner)|null  $resolver
+     * @param  (Closure(Request): (ShellBanner|list<ShellBanner>|null))|null  $resolver
      */
     public function banner(?Closure $resolver): static
     {
-        $this->banner = $resolver;
+        $this->banners = $resolver instanceof Closure ? [$resolver] : [];
+
+        return $this;
+    }
+
+    /**
+     * One more banner resolver, after those already set, so a plugin can add its own without
+     * replacing the app's. Same return shape as {@see banner()}.
+     *
+     * @param  Closure(Request): (ShellBanner|list<ShellBanner>|null)  $resolver
+     */
+    public function addBanner(Closure $resolver): static
+    {
+        $this->banners[] = $resolver;
 
         return $this;
     }
@@ -234,9 +250,10 @@ class ShellBuilder
     }
 
     /**
-     * The list page an entity page falls back to on a switch (spec §5.6), as a route
-     * name. Default: the nav page in the same resource (`deployments.show` →
-     * `deployments.index`).
+     * The list page an entity page falls back to on a switch (spec §5.6), and the nav page
+     * a record page lights, as a route name. Default: the resource's `.index` route on a
+     * switch, then the nearest parent route that is a nav page (`billing.coupons.show` →
+     * `billing.coupons`), then the nav page sharing the most whole name segments.
      *
      * @param  Closure(Route): ?string  $resolver
      */
@@ -293,7 +310,10 @@ class ShellBuilder
      * @param  string|false|(Closure(Request): ?string)|null  $profileUrl
      * @param  string|false|(Closure(Request): ?string)|null  $switchAccountUrl
      * @param  string|false|(Closure(Request): ?string)|null  $signOutUrl
+     *                                                                     `signedInWith` is the line under the name ("Signed in with Cbox ID · Production EU"): a
+     *                                                                     string, or a closure over the request for what only the session knows.
      * @param  'get'|'post'  $signOutMethod
+     * @param  string|(Closure(Request): ?string)|null  $signedInWith
      * @param  array<string, string>  $languages  code => label
      * @param  array<string, string>  $formats  code => label
      */
@@ -302,7 +322,7 @@ class ShellBuilder
         string|false|Closure|null $switchAccountUrl = null,
         string|false|Closure|null $signOutUrl = null,
         string $signOutMethod = 'post',
-        ?string $signedInWith = null,
+        string|Closure|null $signedInWith = null,
         array $languages = [],
         array $formats = [],
     ): static {
@@ -419,20 +439,91 @@ class ShellBuilder
 
         $resource = substr($name, 0, (int) strrpos($name, '.') + 1);
 
-        // The resource's `.index` route is its list; else the first nav page of the resource.
+        // The resource's `.index` route is its list; else the nearest nav page by whole segments.
         if ($resource.'index' !== $name && $this->router->has($resource.'index')) {
             return $resource.'index';
         }
 
+        $pages = [];
+
         foreach ($this->nav->areas() as $area) {
             foreach ($area->pages() as $page) {
-                if ($page->route !== $name && str_starts_with($page->route, $resource)) {
-                    return $page->route;
+                if ($page->route !== $name) {
+                    $pages[] = $page->route;
                 }
             }
         }
 
-        return null;
+        return self::nearestNavPage($name, $pages);
+    }
+
+    /**
+     * The nav page nearest to route `$name` among `$pages` (route names, in nav order): the
+     * nearest parent route that is one (`billing.subscriptions.show` → `billing.subscriptions`),
+     * else the page sharing the most whole leading segments with it. Names are compared by
+     * segment, never by string prefix, so `billing.subscriptions.show` never lights
+     * `billing.subscriptions.dunning` while `billing.subscriptions` is a page, and `billing.sub`
+     * never matches `billing.subscriptions`.
+     *
+     * @param  list<string>  $pages
+     */
+    private static function nearestNavPage(string $name, array $pages): ?string
+    {
+        foreach (self::parentRoutes($name) as $parent) {
+            if (in_array($parent, $pages, true)) {
+                return $parent;
+            }
+        }
+
+        return self::longestSegmentMatch($name, $pages);
+    }
+
+    /**
+     * The page sharing the most whole leading segments with `$name`. It must share at least
+     * two (one for a two-segment name, `coupons.show` → `coupons.index`), so an app's name
+     * prefix alone (`billing`) never lights a page. On a tie: the resource's `.index` page,
+     * then the page with the fewest segments, then nav order.
+     *
+     * @param  list<string>  $pages
+     */
+    private static function longestSegmentMatch(string $name, array $pages): ?string
+    {
+        $segments = explode('.', $name);
+        $minimum = min(2, count($segments) - 1);
+
+        if ($minimum < 1) {
+            return null;
+        }
+
+        $best = null;
+        $bestRank = null;
+
+        foreach ($pages as $order => $page) {
+            if ($page === $name) {
+                continue;
+            }
+
+            $candidate = explode('.', $page);
+            $shared = 0;
+
+            while (isset($segments[$shared], $candidate[$shared]) && $segments[$shared] === $candidate[$shared]) {
+                $shared++;
+            }
+
+            if ($shared < $minimum) {
+                continue;
+            }
+
+            $isIndex = count($candidate) === $shared + 1 && $candidate[$shared] === 'index';
+            $rank = [-$shared, $isIndex ? 0 : 1, count($candidate), $order];
+
+            if ($bestRank === null || $rank < $bestRank) {
+                $best = $page;
+                $bestRank = $rank;
+            }
+        }
+
+        return $best;
     }
 
     /**
@@ -449,6 +540,7 @@ class ShellBuilder
         $context = $this->resolveContext($request);
         $current = $request->route();
         $current = $current instanceof Route ? $current : null;
+        $banners = $this->buildBanners($request, $context);
 
         return new Shell(
             app: $this->resolveApp(),
@@ -465,9 +557,10 @@ class ShellBuilder
             apps: new ShellApps($this->catalogUrl ?? ($this->router->has('cbox-id.apps.catalog')
                 ? route('cbox-id.apps.catalog', ['include' => 'available'], false)
                 : '/apps/catalog?include=available')),
-            banner: $this->buildBanner($request, $context),
+            banner: $banners['banner'],
             preferences: $this->preferences->read($request),
             account: $this->buildAccount($request, $current),
+            banners: $banners['banners'],
         );
     }
 
@@ -476,6 +569,7 @@ class ShellBuilder
         $config = $this->account ?? [];
         $method = ($config['signOutMethod'] ?? 'post') === 'get' ? 'get' : 'post';
         $signedInWith = $config['signedInWith'] ?? null;
+        $signedInWith = $signedInWith instanceof Closure ? $signedInWith($request) : $signedInWith;
         $languages = $config['languages'] ?? [];
         $formats = $config['formats'] ?? [];
 
@@ -604,10 +698,6 @@ class ShellBuilder
         $areas = [];
         $activeArea = '';
         $activePage = null;
-        $prefixArea = '';
-        $prefixPage = null;
-        $resource = $currentName !== null && str_contains($currentName, '.')
-            ? substr($currentName, 0, (int) strrpos($currentName, '.') + 1) : null;
 
         foreach ($this->nav->areas() as $area) {
             if (! $this->featureOn($area) || ! $this->allowed($area, $gate, $request, $context)) {
@@ -651,9 +741,6 @@ class ShellBuilder
                 if ($page->route === $currentName && $activeArea === '') {
                     $activeArea = $area->key;
                     $activePage = $page->route;
-                } elseif ($resource !== null && $prefixArea === '' && str_starts_with($page->route, $resource)) {
-                    $prefixArea = $area->key;
-                    $prefixPage = $page->route;
                 }
             }
 
@@ -664,25 +751,29 @@ class ShellBuilder
             $areas[] = new ShellNavArea($area->key, $area->label, $pages[0]->href, self::grouped($pages), $area->icon);
         }
 
-        // A record page (`coupons.show`) is not a nav page itself: light its list page and
-        // area. The app's list fallback wins, then a page of the same resource
-        // (`coupons.index`), then the nearest parent route that is a nav page (`coupons`).
+        // A record page (`subscriptions.show`) is not a nav page itself: light its list page
+        // and area. The app's list fallback wins, then the nearest parent route that is a nav
+        // page (`subscriptions`), then the page sharing the most whole segments (a sibling such
+        // as `subscriptions.index`). Never a bare string prefix: `subscriptions.dunning` is
+        // not the list of `subscriptions.show`.
         if ($activeArea === '' && $current instanceof Route && $currentName !== null) {
-            $candidates = [];
+            $fallback = $this->listFallback instanceof Closure ? ($this->listFallback)($current) : null;
+            $found = is_string($fallback) && $fallback !== '' ? self::findPage($areas, [$fallback]) : null;
 
-            if ($this->listFallback instanceof Closure) {
-                $fallback = ($this->listFallback)($current);
+            if ($found === null) {
+                $pages = [];
 
-                if (is_string($fallback) && $fallback !== '') {
-                    $candidates[] = $fallback;
+                foreach ($areas as $area) {
+                    foreach ($area->pages as $page) {
+                        $pages[] = $page->key;
+                    }
                 }
+
+                $nearest = self::nearestNavPage($currentName, $pages);
+                $found = $nearest !== null ? self::findPage($areas, [$nearest]) : null;
             }
 
-            [$activeArea, $activePage] = self::findPage($areas, $candidates) ?? [$prefixArea, $prefixPage];
-
-            if ($activeArea === '') {
-                [$activeArea, $activePage] = self::findPage($areas, self::parentRoutes($currentName)) ?? ['', null];
-            }
+            [$activeArea, $activePage] = $found ?? ['', null];
         }
 
         return new ShellNav($areas, $activeArea, $activePage);
@@ -875,14 +966,36 @@ class ShellBuilder
         return new ShellHelp($help->enabled, $topic, $help->sessionUrl, $help->portalUrl, $help->updatesUrl);
     }
 
-    private function buildBanner(Request $request, ResolvedContext $context): ?ShellBanner
+    /**
+     * The app's banners and the sandbox strip. `banners` holds the strip first (it sits under
+     * the header, spec §4.3) and then every app banner, in the order the resolvers were added.
+     * `banner` is the single strip older cbox-ui reads: the first app banner, else the strip.
+     *
+     * @return array{banner: ?ShellBanner, banners: list<ShellBanner>}
+     */
+    private function buildBanners(Request $request, ResolvedContext $context): array
     {
-        $banner = $this->banner instanceof Closure ? ($this->banner)($request) : null;
+        $app = [];
 
-        if ($banner instanceof ShellBanner) {
-            return $banner;
+        foreach ($this->banners as $resolver) {
+            $result = $resolver($request);
+
+            foreach (is_array($result) ? $result : [$result] as $banner) {
+                if ($banner instanceof ShellBanner) {
+                    $app[] = $banner;
+                }
+            }
         }
 
+        $appSandbox = array_filter($app, static fn (ShellBanner $banner): bool => $banner->kind === BannerKind::Sandbox) !== [];
+        $sandbox = $appSandbox ? null : $this->sandboxStrip($context);
+        $banners = $sandbox instanceof ShellBanner ? [$sandbox, ...$app] : $app;
+
+        return ['banner' => $app[0] ?? $sandbox, 'banners' => $banners];
+    }
+
+    private function sandboxStrip(ResolvedContext $context): ?ShellBanner
+    {
         $deepest = $context->deepest();
 
         if (! $deepest instanceof ContextItem || $deepest->testData !== true) {

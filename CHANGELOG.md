@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- `shell.banners`: every strip under the header, the sandbox strip first, then the app's banners. `->banner(fn)` may return a list, and `->addBanner(fn)` adds another resolver (a plugin's). An app banner (a tax hold) no longer hides the sandbox strip. `shell.banner` keeps the first app banner, else the strip, for cbox-ui 0.10.1 and older. `AssertableShell::assertBanners([...])` and `assertHasBanner($kind, $text)`; `assertNoBanner()` also checks `banners`.
+- `->account(signedInWith: fn (Request $request) => …)`: the "Signed in with" line can be read per request (Cbox ID's environment name).
+- `InteractsWithShell::freshShellRequest()`: forgets the scoped instances between two requests of one HTTP test, as a new request does in production.
+
+### Fixed
+- A record page lit a sibling nav page that only shared its route-name prefix: `billing.subscriptions.show` lit `billing.subscriptions.dunning`. The order is now the app's `->listFallback()`, the nearest parent route that is a nav page, then the nav page sharing the most whole name segments (the `.index` page first on a tie). The switch's list fallback uses the same rule after the resource's `.index` route.
+
+All additions are optional and backward compatible with 0.2.x.
+
 ## v0.2.3 — 2026-11-11
 
 ### Added

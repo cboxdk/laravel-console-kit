@@ -89,6 +89,18 @@ it('takes route names, paths, URLs and closures from the app, and hides a row wi
     ]);
 });
 
+it('reads signedInWith per request from a closure', function (): void {
+    accountRoutes();
+    Console::shell()->account(signedInWith: fn (Request $request): ?string => $request->header('X-Environment') !== null
+        ? 'Signed in with Cbox ID · '.$request->header('X-Environment')
+        : null);
+
+    $account = test()->get('/orgs/cbox', [...inertiaVisit(), 'X-Environment' => 'Production EU'])->json('props.shell.account');
+
+    expect($account['signedInWith'])->toBe('Signed in with Cbox ID · Production EU')
+        ->and(shellAccount())->not->toHaveKey('signedInWith');
+});
+
 it('never links off-site over plain http or a script url', function (): void {
     Console::shell()->account(profileUrl: 'javascript:alert(1)', switchAccountUrl: 'http://evil.test', signOutUrl: '//evil.test/logout');
 
