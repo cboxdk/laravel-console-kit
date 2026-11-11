@@ -34,7 +34,11 @@ use Throwable;
  *         ->search(new DeploymentSearch)
  *         ->actions(fn () => [PaletteAction::route('deployments.create', 'New deployment')])
  *         ->helpTopic(fn (Request $r) => $r->route()?->getName())
- *         ->notifications(null);
+ *         ->notifications(null)
+ *         // cbox-ui 0.11: the phone's tab bar, "+" and the create sheet, per-page palette actions
+ *         ->tabs('overview', 'deployments', 'logs')
+ *         ->creatables([new ShellCreatable('deployment', 'Deployment', 'deployments')], default: 'deployment')
+ *         ->page('deployments.index', create: 'deployment', actions: [PaletteAction::route('deployments.export', 'Export')]);
  *
  * Building reads only local state: the nav registry, the levels (the app's own data),
  * cookies and config. Lists, search, notifications and Help load in the browser after
@@ -85,7 +89,31 @@ class ShellBuilder
     /** @var string|(Closure(ContextItem): string)|null */
     private string|Closure|null $sandboxText = null;
 
-    private ?string $catalogUrl = null;
+    /** @var string|(Closure(Request, list<ContextItem>): ?string)|null */
+    private string|Closure|null $catalogUrl = null;
+
+    /** @var list<string> */
+    private array $tabs = [];
+
+    /** @var (Closure(Request, list<ContextItem>): list<ShellCreatable>)|list<ShellCreatable> */
+    private Closure|array $creatables = [];
+
+    private ?string $createDefault = null;
+
+    /** @var list<ShellPageDefinition> */
+    private array $pages = [];
+
+    /** @var list<string> */
+    private array $viewParameters = [];
+
+    /** @var (Closure(Request, list<ContextItem>): list<PaletteRecord>)|null */
+    private ?Closure $recent = null;
+
+    /** @var (Closure(Request, ?string): list<ShellHelpArticle>)|null */
+    private ?Closure $helpArticles = null;
+
+    /** @var (Closure(Request): ?int)|null */
+    private ?Closure $helpUnread = null;
 
     /** @var (Closure(Route): ?string)|null */
     private ?Closure $listFallback = null;
@@ -241,12 +269,196 @@ class ShellBuilder
         return $this;
     }
 
-    /** Where the app switcher reads the catalog. Default: laravel-id-client's `cbox-id.apps.catalog`. */
-    public function appCatalogUrl(string $url): static
+    /**
+     * Where the app switcher reads the catalog. Default: laravel-id-client's
+     * `cbox-id.apps.catalog`. A string, or a resolver per request over the context the page
+     * is in, so the catalog can be asked for this organization. A resolver answering null
+     * (or anything but a same-origin path or an `https://` URL) keeps the default:
+     *
+     *     ->appCatalogUrl(fn (Request $request, array $context) => isset($context[0])
+     *         ? '/apps/catalog?include=available&organization='.$context[0]->routeKey
+     *         : null)
+     *
+     * @param  string|(Closure(Request, list<ContextItem>): ?string)  $url
+     */
+    public function appCatalogUrl(string|Closure $url): static
     {
         $this->catalogUrl = $url;
 
         return $this;
+    }
+
+    /**
+     * The phone's bottom tab bar (cbox-ui 0.11): up to four nav area keys, in order, before
+     * More. An area the person cannot see on a page is left out of the bar there; every area
+     * stays listed under More. Default (none): cbox-ui takes the first four areas.
+     *
+     * @throws InvalidArgumentException with more than four keys, or a key twice
+     */
+    public function tabs(string ...$areas): static
+    {
+        $areas = array_values($areas);
+
+        if (count($areas) > 4) {
+            throw new InvalidArgumentException('The tab bar holds at most four areas.');
+        }
+
+        if (count(array_unique($areas)) !== count($areas)) {
+            throw new InvalidArgumentException('Tab bar areas must be unique.');
+        }
+
+        $this->tabs = $areas;
+
+        return $this;
+    }
+
+    /**
+     * What the person can create from "+" and the palette (cbox-ui 0.11, spec §6.3), as a
+     * list or a resolver per request (to leave out what the person may not create), and
+     * the creatable "+" opens on a page that names none. With no creatables there is no "+".
+     *
+     * @param  (Closure(Request, list<ContextItem>): list<ShellCreatable>)|list<ShellCreatable>  $items
+     */
+    public function creatables(Closure|array $items, ?string $default = null): static
+    {
+        $this->creatables = $items;
+        $this->createDefault = $default;
+
+        return $this;
+    }
+
+    /**
+     * Describe a page, or a family of pages, by route name or `Str::is()` pattern
+     * (`projects.signals.*`). An exact name wins over a pattern; among patterns, the first
+     * declared wins.
+     *
+     *  - `create`: the creatable this page makes. The phone's "+" opens its form ("New
+     *    invoice"). A key that is not among this request's creatables is not sent.
+     *  - `actions`: what can be done on this page, shown first in the palette ("On
+     *    Invoices"). Route actions are built like the app's palette actions.
+     *  - `title`: the page title the palette and the chat use. Default: the nav page's
+     *    label, else its area's, else the app's name.
+     *  - `views`: required route parameters that choose a view of the page, not a record
+     *    (`{signal}` in `/projects/{project}/{signal}`). A context switch then keeps the page
+     *    and the view instead of falling back to the list.
+     *
+     * @param  string|list<string>  $routes
+     * @param  list<PaletteAction>|(Closure(Request): list<PaletteAction>)  $actions
+     * @param  string|(Closure(Request): ?string)|null  $title
+     * @param  list<string>  $views
+     */
+    public function page(string|array $routes, ?string $create = null, array|Closure $actions = [], string|Closure|null $title = null, array $views = []): static
+    {
+        $this->pages[] = new ShellPageDefinition(is_string($routes) ? [$routes] : $routes, $create, $actions, $title, $views);
+
+        return $this;
+    }
+
+    /**
+     * Route parameters that, on every route, choose a view of a page rather than a record
+     * (`signal`). Per page, use `->page($route, views: [...])`.
+     */
+    public function viewParameters(string ...$names): static
+    {
+        $this->viewParameters = array_values(array_unique([...$this->viewParameters, ...array_values($names)]));
+
+        return $this;
+    }
+
+    /**
+     * What the palette shows under "Recent" before anything is typed (cbox-ui 0.11). From
+     * the app's own data only (spec §11.2a). Absent: cbox-ui shows the pages last visited.
+     *
+     * @param  (Closure(Request, list<ContextItem>): list<PaletteRecord>)|null  $resolver
+     */
+    public function recent(?Closure $resolver): static
+    {
+        $this->recent = $resolver;
+
+        return $this;
+    }
+
+    /**
+     * Articles for the page, sent with it, for an app without an Assistant articles endpoint
+     * (cbox-ui 0.11). The resolver gets the page's help topic. From local data only.
+     *
+     * @param  (Closure(Request, ?string): list<ShellHelpArticle>)|null  $resolver
+     */
+    public function helpArticles(?Closure $resolver): static
+    {
+        $this->helpArticles = $resolver;
+
+        return $this;
+    }
+
+    /**
+     * Unread support replies the app already knows (a local count), so Help shows its dot
+     * before the updates have loaded (cbox-ui 0.11). Never ask the Assistant here.
+     *
+     * @param  (Closure(Request): ?int)|null  $resolver
+     */
+    public function helpUnread(?Closure $resolver): static
+    {
+        $this->helpUnread = $resolver;
+
+        return $this;
+    }
+
+    /** The page definition for route `$name`: an exact name first, then the first pattern. */
+    public function pageDefinition(?string $name): ?ShellPageDefinition
+    {
+        if ($name === null || $name === '') {
+            return null;
+        }
+
+        foreach ($this->pages as $page) {
+            if ($page->names($name)) {
+                return $page;
+            }
+        }
+
+        foreach ($this->pages as $page) {
+            if ($page->matches($name)) {
+                return $page;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The route's required parameters that choose a view, not a record: those declared with
+     * {@see viewParameters()} and with `->page($route, views: [...])`.
+     *
+     * @return list<string>
+     */
+    public function viewParametersFor(Route $route): array
+    {
+        $views = $this->pageDefinition($route->getName())->views ?? [];
+
+        return array_values(array_unique([...$this->viewParameters, ...$views]));
+    }
+
+    /**
+     * The resolved context as route parameters: each level's route parameter => its item's
+     * route key (`org` => `cbox`). Fills what a page's own URL omits when the shell builds
+     * links.
+     *
+     * @return array<string, string>
+     */
+    public static function contextParameters(ResolvedContext $context): array
+    {
+        $out = [];
+
+        foreach ($context->levels as $index => $level) {
+            $item = $context->items[$index] ?? null;
+
+            if ($item instanceof ContextItem && $item->routeKey !== '') {
+                $out[$level->routeParameter()] = $item->routeKey;
+            }
+        }
+
+        return $out;
     }
 
     /**
@@ -540,31 +752,134 @@ class ShellBuilder
         $context = $this->resolveContext($request);
         $current = $request->route();
         $current = $current instanceof Route ? $current : null;
+        $parameters = self::contextParameters($context);
         $banners = $this->buildBanners($request, $context);
+        $nav = $this->buildNav($request, $current, $context, $parameters);
+        $create = $this->buildCreate($request, $context);
 
         return new Shell(
             app: $this->resolveApp(),
             person: $this->resolvePerson($request),
-            nav: $this->buildNav($request, $current, $context),
+            nav: $nav,
             context: new ShellContext($this->buildLevels($request, $context), route(self::ROUTE_SWITCH, [], false)),
-            palette: new ShellPalette($this->searchUrl($request, $context), $this->buildActions($request, $current), $this->resolvePlaceholder($request)),
+            palette: new ShellPalette(
+                $this->searchUrl($request, $context),
+                $this->resolveActions($this->actions instanceof Closure ? ($this->actions)($request) : $this->actions, $current, $parameters),
+                $this->resolvePlaceholder($request),
+                $this->buildRecent($request, $context),
+            ),
             help: $this->buildHelp($request),
             notifications: $this->notifications instanceof NotificationSource
                 ? ShellNotifications::enabled($this->notifications->unread($request), route(self::ROUTE_NOTIFICATIONS, [], false))
                 : ShellNotifications::disabled(),
-            // The switcher shows the apps the organization does not have yet too (dimmed), so it
-            // asks laravel-id-client's catalog for them; older switchers do not.
-            apps: new ShellApps($this->catalogUrl ?? ($this->router->has('cbox-id.apps.catalog')
-                ? route('cbox-id.apps.catalog', ['include' => 'available'], false)
-                : '/apps/catalog?include=available')),
+            apps: new ShellApps($this->catalogUrlFor($request, $context)),
             banner: $banners['banner'],
             preferences: $this->preferences->read($request),
-            account: $this->buildAccount($request, $current),
+            account: $this->buildAccount($request, $current, $parameters),
             banners: $banners['banners'],
+            page: $this->buildPage($request, $current, $nav, $create, $parameters),
+            create: $create,
         );
     }
 
-    private function buildAccount(Request $request, ?Route $current): ShellAccount
+    /**
+     * The app switcher's catalog: the app's URL or resolver, else laravel-id-client's
+     * catalog. The switcher shows the apps the organization does not have yet too (dimmed),
+     * so it asks for them; older switchers do not.
+     */
+    private function catalogUrlFor(Request $request, ResolvedContext $context): string
+    {
+        $url = $this->catalogUrl instanceof Closure ? ($this->catalogUrl)($request, $context->items) : $this->catalogUrl;
+
+        if (is_string($url) && (ShellUrls::samePath($url) !== null || str_starts_with($url, 'https://'))) {
+            return $url;
+        }
+
+        return $this->router->has('cbox-id.apps.catalog')
+            ? route('cbox-id.apps.catalog', ['include' => 'available'], false)
+            : '/apps/catalog?include=available';
+    }
+
+    /** `shell.create`: this request's creatables, and the default when it is one of them. */
+    private function buildCreate(Request $request, ResolvedContext $context): ?ShellCreate
+    {
+        $items = $this->creatables instanceof Closure ? ($this->creatables)($request, $context->items) : $this->creatables;
+        $items = array_values(array_filter($items, static fn (ShellCreatable $item): bool => $item->key !== ''));
+
+        if ($items === []) {
+            return null;
+        }
+
+        $default = $this->createDefault !== null && (new ShellCreate($items))->has($this->createDefault) ? $this->createDefault : null;
+
+        return new ShellCreate($items, $default);
+    }
+
+    /**
+     * `shell.page`: sent when the app described this page, or when the shell can create
+     * (so "+" and "On {page}" have a title). A create key the request cannot create is
+     * dropped: "+" never opens a form that is not there.
+     *
+     * @param  array<string, string>  $parameters
+     */
+    private function buildPage(Request $request, ?Route $current, ShellNav $nav, ?ShellCreate $create, array $parameters): ?ShellPage
+    {
+        $name = $current?->getName();
+        $definition = $this->pageDefinition($name);
+
+        if (! $definition instanceof ShellPageDefinition) {
+            return $create instanceof ShellCreate ? new ShellPage($this->navTitle($nav), $name) : null;
+        }
+
+        $title = $definition->title instanceof Closure ? ($definition->title)($request) : $definition->title;
+        $actions = $definition->actions instanceof Closure ? ($definition->actions)($request) : $definition->actions;
+        $key = $definition->create;
+
+        return new ShellPage(
+            title: is_string($title) && $title !== '' ? $title : $this->navTitle($nav),
+            route: $name,
+            create: $key !== null && $create instanceof ShellCreate && $create->has($key) ? $key : null,
+            actions: $this->resolveActions($actions, $current, $parameters),
+        );
+    }
+
+    /** The active nav page's label, else its area's, else the app's name. */
+    private function navTitle(ShellNav $nav): string
+    {
+        foreach ($nav->areas as $area) {
+            if ($area->key !== $nav->activeArea) {
+                continue;
+            }
+
+            foreach ($area->pages as $page) {
+                if ($page->key === $nav->activePage) {
+                    return $page->label;
+                }
+            }
+
+            return $area->label;
+        }
+
+        return $this->resolveApp()->name;
+    }
+
+    /** @return list<PaletteRecord> */
+    private function buildRecent(Request $request, ResolvedContext $context): array
+    {
+        if (! $this->recent instanceof Closure) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            ($this->recent)($request, $context->items),
+            static fn (PaletteRecord $record): bool => $record->id !== '' && ShellUrls::samePath($record->url) !== null,
+        ));
+    }
+
+    /**
+     * @param  array<string, string>  $parameters
+     */
+    private function buildAccount(Request $request, ?Route $current, array $parameters): ShellAccount
     {
         $config = $this->account ?? [];
         $method = ($config['signOutMethod'] ?? 'post') === 'get' ? 'get' : 'post';
@@ -574,9 +889,9 @@ class ShellBuilder
         $formats = $config['formats'] ?? [];
 
         return new ShellAccount(
-            profileUrl: $this->accountUrl($config['profileUrl'] ?? null, $request, $current, fn (): ?string => $this->cboxIdProfileUrl() ?? $this->routeUrl(self::DEFAULT_PROFILE_ROUTE, $current)),
-            switchAccountUrl: $this->accountUrl($config['switchAccountUrl'] ?? null, $request, $current, fn (): ?string => $this->routeUrl(self::DEFAULT_SWITCH_ACCOUNT_ROUTE, $current)),
-            signOutUrl: $this->accountUrl($config['signOutUrl'] ?? null, $request, $current, fn (): ?string => $this->routeUrl(self::DEFAULT_SIGN_OUT_ROUTE, $current)),
+            profileUrl: $this->accountUrl($config['profileUrl'] ?? null, $request, $current, $parameters, fn (): ?string => $this->cboxIdProfileUrl() ?? $this->routeUrl(self::DEFAULT_PROFILE_ROUTE, $current, $parameters)),
+            switchAccountUrl: $this->accountUrl($config['switchAccountUrl'] ?? null, $request, $current, $parameters, fn (): ?string => $this->routeUrl(self::DEFAULT_SWITCH_ACCOUNT_ROUTE, $current, $parameters)),
+            signOutUrl: $this->accountUrl($config['signOutUrl'] ?? null, $request, $current, $parameters, fn (): ?string => $this->routeUrl(self::DEFAULT_SIGN_OUT_ROUTE, $current, $parameters)),
             signOutMethod: $method,
             signedInWith: is_string($signedInWith) && $signedInWith !== '' ? $signedInWith : null,
             languages: is_array($languages) ? self::stringMap($languages) : [],
@@ -585,9 +900,10 @@ class ShellBuilder
     }
 
     /**
+     * @param  array<string, string>  $parameters
      * @param  Closure(): ?string  $default
      */
-    private function accountUrl(mixed $target, Request $request, ?Route $current, Closure $default): ?string
+    private function accountUrl(mixed $target, Request $request, ?Route $current, array $parameters, Closure $default): ?string
     {
         if ($target === false) {
             return null;
@@ -602,15 +918,18 @@ class ShellBuilder
         }
 
         if ($this->router->has($target)) {
-            return $this->routeUrl($target, $current);
+            return $this->routeUrl($target, $current, $parameters);
         }
 
         return ShellUrls::samePath($target) ?? (str_starts_with($target, 'https://') ? $target : null);
     }
 
-    private function routeUrl(string $name, ?Route $current): ?string
+    /**
+     * @param  array<string, string>  $parameters
+     */
+    private function routeUrl(string $name, ?Route $current, array $parameters): ?string
     {
-        return $this->router->has($name) ? ShellUrls::route($this->router, $name, $current) : null;
+        return $this->router->has($name) ? ShellUrls::route($this->router, $name, $current, [], $parameters) : null;
     }
 
     /** Cbox ID's Profile and security page, when laravel-id-client is installed and configured. */
@@ -691,7 +1010,14 @@ class ShellBuilder
         return is_string($value) && $value !== '' ? $value : null;
     }
 
-    private function buildNav(Request $request, ?Route $current, ResolvedContext $context): ShellNav
+    /**
+     * The rail. Each page's link takes the current route's parameters, then the resolved
+     * context's (`$parameters`), so a page whose URL omits an outer level (the organization
+     * on `/projects/{project}`) still links to that level's pages.
+     *
+     * @param  array<string, string>  $parameters
+     */
+    private function buildNav(Request $request, ?Route $current, ResolvedContext $context, array $parameters): ShellNav
     {
         $gate = $this->gate->forUser($request->user());
         $currentName = $current?->getName();
@@ -722,8 +1048,8 @@ class ShellBuilder
                 }
 
                 $href = $locked
-                    ? $this->upgradeHref($page, $current) ?? ShellUrls::route($this->router, $page->route, $current)
-                    : ShellUrls::route($this->router, $page->route, $current);
+                    ? $this->upgradeHref($page, $current, $parameters) ?? ShellUrls::route($this->router, $page->route, $current, [], $parameters)
+                    : ShellUrls::route($this->router, $page->route, $current, [], $parameters);
 
                 if ($href === null) {
                     continue;
@@ -776,7 +1102,10 @@ class ShellBuilder
             [$activeArea, $activePage] = $found ?? ['', null];
         }
 
-        return new ShellNav($areas, $activeArea, $activePage);
+        $shown = array_map(static fn (ShellNavArea $area): string => $area->key, $areas);
+        $tabs = array_values(array_filter($this->tabs, static fn (string $key): bool => in_array($key, $shown, true)));
+
+        return new ShellNav($areas, $activeArea, $activePage, $tabs);
     }
 
     /**
@@ -844,7 +1173,10 @@ class ShellBuilder
         return array_merge(...array_values($buckets));
     }
 
-    private function upgradeHref(NavPage $page, ?Route $current): ?string
+    /**
+     * @param  array<string, string>  $parameters
+     */
+    private function upgradeHref(NavPage $page, ?Route $current, array $parameters): ?string
     {
         $target = $page->upgradeUrl;
 
@@ -853,7 +1185,7 @@ class ShellBuilder
         }
 
         if ($this->router->has($target)) {
-            return ShellUrls::route($this->router, $target, $current);
+            return ShellUrls::route($this->router, $target, $current, [], $parameters);
         }
 
         return ShellUrls::samePath($target) ?? (str_starts_with($target, 'https://') ? $target : null);
@@ -937,14 +1269,17 @@ class ShellBuilder
         return route(self::ROUTE_SEARCH, array_filter(['context' => $ids === [] ? null : $ids, 'from' => $from]), false);
     }
 
-    /** @return list<PaletteAction> */
-    private function buildActions(Request $request, ?Route $current): array
+    /**
+     * @param  list<PaletteAction>  $actions
+     * @param  array<string, string>  $parameters
+     * @return list<PaletteAction>
+     */
+    private function resolveActions(array $actions, ?Route $current, array $parameters): array
     {
-        $actions = $this->actions instanceof Closure ? ($this->actions)($request) : $this->actions;
         $out = [];
 
         foreach ($actions as $action) {
-            $resolved = $action->resolve($this->router, $current);
+            $resolved = $action->resolveIn($this->router, $current, $parameters);
 
             if ($resolved instanceof PaletteAction) {
                 $out[] = $resolved;
@@ -958,12 +1293,13 @@ class ShellBuilder
     {
         $help = $this->help instanceof HelpConfig ? $this->help->resolve($request) : new ShellHelp;
         $topic = $this->helpTopic instanceof Closure ? ($this->helpTopic)($request) : null;
+        $topic = $topic === '' ? null : $topic;
 
-        if ($topic === null || $topic === '') {
-            return $help;
-        }
-
-        return new ShellHelp($help->enabled, $topic, $help->sessionUrl, $help->portalUrl, $help->updatesUrl);
+        return $help->with(
+            topic: $topic,
+            articles: $this->helpArticles instanceof Closure ? ($this->helpArticles)($request, $topic ?? $help->topic) : null,
+            unread: $this->helpUnread instanceof Closure ? ($this->helpUnread)($request) : null,
+        );
     }
 
     /**

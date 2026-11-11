@@ -31,6 +31,10 @@ readonly class Shell
          * @var list<ShellBanner>
          */
         public array $banners = [],
+        /** The page the request is on (cbox-ui 0.11). Sent when the app declared the page or the shell can create. */
+        public ?ShellPage $page = null,
+        /** What "+" and the palette can create (cbox-ui 0.11). Sent when it has items. */
+        public ?ShellCreate $create = null,
     ) {}
 
     /** @return array<string, mixed> */
@@ -39,9 +43,23 @@ readonly class Shell
         $out = [
             'app' => $this->app->toArray(),
             'person' => $this->person->toArray(),
+        ];
+
+        if ($this->page instanceof ShellPage) {
+            $out['page'] = $this->page->toArray();
+        }
+
+        $out += [
             'nav' => $this->nav->toArray(),
             'context' => $this->context->toArray(),
             'palette' => $this->palette->toArray(),
+        ];
+
+        if ($this->create instanceof ShellCreate && $this->create->items !== []) {
+            $out['create'] = $this->create->toArray();
+        }
+
+        $out += [
             'help' => $this->help->toArray(),
             'notifications' => $this->notifications->toArray(),
             'apps' => $this->apps->toArray(),

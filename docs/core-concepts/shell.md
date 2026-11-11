@@ -19,10 +19,16 @@ for field. `toArray()` is the wire shape. Optional fields are left out, never se
 type Shell = {
   app: { key: string; name: string; homeUrl: string };
   person: { id: string; name: string; initials: string; avatarUrl?: string };
-  nav: { areas: NavArea[]; activeArea: string; activePage?: string };
+  page?: { title: string; route?: string; create?: string; actions?: PaletteAction[] };  // cbox-ui 0.11
+  nav: { areas: NavArea[]; activeArea: string; activePage?: string; tabs?: string[] };  // tabs: cbox-ui 0.11
   context: { levels: ContextLevel[]; switchUrl: string };
-  palette: { searchUrl: string; actions: PaletteAction[]; placeholder?: string };
-  help: { enabled: boolean; topic?: string; sessionUrl?: string; portalUrl?: string; updatesUrl?: string };
+  palette: { searchUrl: string; actions: PaletteAction[]; placeholder?: string; recent?: PaletteRecord[] };
+  create?: { items: Creatable[]; default?: string };  // cbox-ui 0.11
+  help: {
+    enabled: boolean; topic?: string; sessionUrl?: string; portalUrl?: string; updatesUrl?: string;
+    articles?: { id: string; title: string; excerpt?: string; body?: string; url?: string }[];  // cbox-ui 0.11
+    unread?: number;  // cbox-ui 0.11
+  };
   notifications: { enabled: false } | { enabled: true; unread: number; url: string };
   apps: { catalogUrl: string };
   account?: {                    // the account menu (§10); a row without its URL is hidden
@@ -48,13 +54,29 @@ type NavPage = {
 
 type ContextLevel = {
   key: string; label: string;
-  current: { id: string; name: string; initials?: string; tone?: 'production' | 'sandbox' | 'neutral'; label?: string; testData?: boolean };
+  current: ContextItem;
   listUrl: string; createUrl?: string; allUrl: string;
   settingsUrl: string; // template: replace "{id}" with a row's id
 };
 
-type PaletteAction = { id: string; label: string; url: string; icon?: string; keywords?: string[]; shortcut?: string };
+type ContextItem = {
+  id: string; name: string; initials?: string; label?: string; testData?: boolean;
+  tone?: 'production' | 'sandbox' | 'neutral' | 'staging' | 'preview' | 'development';  // the last three: cbox-ui 0.11
+  live?: boolean; group?: string; description?: string;  // cbox-ui 0.11
+};
+
+type PaletteAction = {
+  id: string; label: string; url: string; icon?: string; keywords?: string[]; shortcut?: string;
+  hint?: string; create?: string;  // cbox-ui 0.11
+};
+
+type PaletteRecord = { id: string; title: string; url: string; subtitle?: string };
+
+type Creatable = { key: string; label: string; area: string; keywords?: string[]; submitLabel?: string };
 ```
+
+Everything marked cbox-ui 0.11 is sent only when the app declares it, so an app on 0.2
+that declares none of it sends the same prop as before.
 
 `NavArea` and `PaletteAction` are not spelled out in the spec; the shapes above are what
 the kit sends. Links are sent as `href` and, since the release after 0.2.2, also as `url`,
@@ -66,15 +88,19 @@ the name cbox-ui's types use.
 |---|---|
 | `app` | `->app($key, $name, $homeUrl)`, else `config('app.name')` |
 | `person` | `->person(fn)`, else the authenticated user's id, `name` (or `email`), `avatar_url` |
-| `nav` | `Console::nav()` areas, pages gated by `Console::features()` and by the person's permission (`can:`, checked with `Gate::forUser($request->user())`). A page whose route cannot be built on this page (a required parameter is missing) is left out; an area with no pages is left out. `href` is the area's first page. |
+| `nav` | `Console::nav()` areas, pages gated by `Console::features()` and by the person's permission (`can:`, checked with `Gate::forUser($request->user())`). A page's link takes the current route's parameters, then the resolved context's (each level's `routeParameter()` => the current item's `routeKey`), so a page whose URL omits an outer level (`/projects/{project}/…`, the organization resolved another way) still links to `/{org}/usage`. A page whose route still cannot be built (a required parameter is missing) is left out; an area with no pages is left out. `href` is the area's first page. |
+| `nav.tabs` | `->tabs('overview', 'invoices', 'customers')`: the phone's bottom tab bar, up to four area keys. An area not shown on this page is left out of the bar. Left out by default (cbox-ui takes the first four areas). |
 | `nav` filter | `->navFilter(fn (NavPage $page, Request $request, array $context): bool)` runs last, per request. A page it rejects is left out everywhere. |
 | `nav.activeArea` | The area holding the current route. On a record page: the page `->listFallback()` names, else the nearest parent route that is a nav page (`billing.subscriptions.show` → `billing.subscriptions`), else the nav page sharing the most whole name segments, at least two (`deployments.show` → `deployments.index`; on a tie the `.index` page, then the shortest name). Names are compared by segment, never by string prefix: `billing.subscriptions.show` does not light `billing.subscriptions.dunning` while `billing.subscriptions` is a page, and `billing.other.show` never lights `billing`. |
 | `palette.placeholder` | `->palettePlaceholder('Search customers, invoices… or pages')`, a string or a closure over the request. Left out by default (cbox-ui says "Search or ask…"). |
 | `context.levels` | Each level's `current()`, outermost first, until one has none. |
-| `palette.actions` | `->actions()`. A route action takes the current route's parameters; one that cannot be built here is left out. |
-| `help` | `->help(HelpConfig)` and `->helpTopic(fn)`. Disabled without a config. |
+| `palette.actions` | `->actions()`. A route action takes the current route's parameters, then the context's; one that cannot be built here is left out. |
+| `palette.recent` | `->recent(fn (Request $request, array $context) => [new PaletteRecord(...)])`, from the app's own data. Rows whose URL is not a same-origin path are dropped. Left out by default (cbox-ui shows the pages last visited). |
+| `page` | `->page($route, create:, actions:, title:)` for the current route (see [Pages and create](#pages-and-create)). Also sent, with the nav page's title, on every page while the shell can create. |
+| `create` | `->creatables([...], default: 'invoice')`. Left out when there is nothing to create (no "+"). |
+| `help` | `->help(HelpConfig)` and `->helpTopic(fn)`. Disabled without a config. `->helpArticles(fn (Request $request, ?string $topic) => [...])` sends the page's articles and `->helpUnread(fn (Request $request) => 2)` the unread support replies the app already knows, both from local data. |
 | `notifications` | `{enabled: false}` without a source: the bell is not rendered at all. |
-| `apps.catalogUrl` | `->appCatalogUrl()`, else laravel-id-client's `cbox-id.apps.catalog`, else `/apps/catalog`, with `?include=available` so the switcher also gets the apps the organization does not have yet. |
+| `apps.catalogUrl` | `->appCatalogUrl()`, a string or a closure over the request and the context (to ask for this organization's catalog; null keeps the default), else laravel-id-client's `cbox-id.apps.catalog`, else `/apps/catalog`, with `?include=available` so the switcher also gets the apps the organization does not have yet. Only a same-origin path or an `https://` URL is sent. |
 | `account` | `->account(...)`, else Cbox ID's Profile and security page (laravel-id-client's `IdentityClient::profileUrl()`, from config, no request) or the `profile` route, the `login.switch` route and the `logout` route (POST). Left out when nothing resolves. |
 | `banners` | The sandbox strip when the deepest current item has `testData: true` (text from `->sandboxText()`), then every banner `->banner(fn)` and `->addBanner(fn)` return, in the order they were added. An app banner never hides the strip; an app banner of kind `sandbox` replaces it. Left out when empty. |
 | `banner` | The first app banner, else the sandbox strip: what cbox-ui 0.10.1 and older read. |
@@ -173,14 +199,19 @@ Console::nav()->area('settings', 'Settings', 'cog', 90)
 state; nothing goes into the session.
 
 1. **The new selection.** Selected ids go through `find()`; an unknown id is a `404`.
-   Levels above the switched one keep the current item. Levels below keep the item with
+   The switched level is the outermost one whose selected id differs from the current
+   one: cbox-ui sends the outer levels' current ids along with the new one. Levels above
+   the switched one keep the current item. Levels below keep the item with
    the same name if the new parent has one, else its first item. Switching project keeps
    "Production" when the new project has one.
 2. **Same page.** If `from`'s route carries the switched level and has no other required
    parameters, it is rebuilt with the new slugs. Optional parameters (`{tab?}`) and the
    query string are kept.
 3. **Entity pages fall back.** A route with a required parameter that is not a context
-   level shows one record. It falls back to the list page of that resource: the route
+   level, and not declared a view, shows one record. A view parameter picks a view of the
+   page, not a record (`{signal}` in `/projects/{project}/signals/{signal}`): declare it per
+   page with `->page('projects.signals.*', views: ['signal'])` or for every route with
+   `->viewParameters('signal')`, and the switch keeps the page and the view. It falls back to the list page of that resource: the route
    `->listFallback(fn)` names, else the resource's `.index` route, else the nearest parent
    route that is a nav page, else the nav page sharing the most whole name segments (see
    `nav.activeArea` above). The record's id is never carried into another context.
@@ -189,8 +220,8 @@ state; nothing goes into the session.
 `from` must be a same-origin path. Anything else is ignored. The landing URL is saved as
 the last context (see below).
 
-Clicking an environment in the cascade posts both levels:
-`select[project]=prj_2&select[environment]=env_5`.
+Clicking an environment in the cascade posts every level down to it, the outer ones with
+their current ids: `select[organization]=org_1&select[project]=prj_2&select[environment]=env_5`.
 
 **Deprecated body.** cbox-ui 0.10.3 and older post a flat body,
 `{organization: "org_2", return_to: "/orgs/cbox/settings"}`. The endpoint still reads it
@@ -268,6 +299,42 @@ Console::shell()->actions(fn (Request $request) => [
 A route action takes the current route's parameters; one that cannot be built here is
 left out. `fragment` is added as `#fragment`, and the action's id becomes
 `{route}#{fragment}`.
+
+## Pages and create
+
+cbox-ui 0.11 adds a "+" (the phone's top bar and the palette's "New …") that opens a
+create sheet, and an "On {page}" group in the palette. The app names what can be created
+and describes its pages; cbox-ui renders the forms (`renderCreate`).
+
+```php
+Console::shell()
+    ->tabs('overview', 'invoices', 'customers', 'settings')
+    ->creatables(fn (Request $request, array $context) => array_values(array_filter([
+        new ShellCreatable('invoice', 'Invoice', 'invoices'),
+        new ShellCreatable('customer', 'Customer', 'customers', keywords: ['client']),
+        $request->user()->can('manage-coupons') ? new ShellCreatable('coupon', 'Coupon', 'catalog') : null,
+    ])), default: 'invoice')
+    ->page('invoices.index', create: 'invoice', actions: [
+        PaletteAction::route('invoices.export', 'Export invoices', hint: 'CSV of this period'),
+        PaletteAction::route('invoices.create', 'New invoice', create: 'invoice'),
+    ])
+    ->page('customers.*', create: 'customer')
+    ->page('projects.signals.*', title: fn (Request $request) => ucfirst($request->route('signal')), views: ['signal']);
+```
+
+- **`->creatables(list|fn, default:)`** is `shell.create`. A list or a closure over the
+  request and the context, so a creatable the person may not use is left out. `default` is
+  what "+" opens on a page without its own target; one that is not among the creatables
+  is not sent.
+- **`->page($routes, create:, actions:, title:, views:)`** describes the page by route
+  name or `Str::is()` pattern; an exact name wins over a pattern, then the first pattern
+  declared. `create` is sent as `page.create` only when it is among this request's
+  creatables, so "+" never opens a missing form. `actions` are `page.actions`, built like
+  palette actions (from the current route, then the context). `title` defaults to the
+  nav page's label, else its area's, else the app's name.
+- **`PaletteAction`** takes `hint:` (a second line) and `create:` (a creatable key cbox-ui
+  opens instead of following the URL; the URL stays the fallback), also as
+  `->withHint()` and `->withCreate()`.
 
 ## Palette search
 

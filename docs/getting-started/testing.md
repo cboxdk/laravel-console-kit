@@ -59,6 +59,10 @@ $this->shellLevels($orgs, $projects);
 It implements "New …" too. `created()` lists what was created; `assertCreated('Payments')`
 and `assertNothingCreated()` assert it.
 
+`FakeContextLevel::currentUsing(fn (Request $request, array $ancestors, FakeContextLevel $level) => ...)`
+resolves the current item another way than from the level's route parameter, as an app
+does when a page's URL omits the level.
+
 ## Fake search and bell
 
 ```php
@@ -91,6 +95,10 @@ $this->assertShell($this->get('/orgs/cbox'))
     ->assertBanners(['sandbox', 'notice'])   // `shell.banners`, in order
     ->assertHasBanner('notice', 'Invoices are on hold.')
     ->assertNoBanner()                       // neither `banner` nor `banners`
+    ->assertTabs(['overview', 'deployments'])  // `nav.tabs`
+    ->assertCanCreateItem('deployment')      // `create.items`
+    ->assertPageCreates('deployment')        // `page.create`, null for none
+    ->assertPageAction('deployments.export') // `page.actions`
     ->assertPath('preferences.theme', 'system');
 ```
 

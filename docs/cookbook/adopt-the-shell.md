@@ -21,8 +21,15 @@ A checklist for moving an app onto the one shell.
    product events.
 5. **Routes.** `Console::shellRoutes()` in `routes/web.php`; `console.shell` on the page
    routes; laravel-id-client's `cbox-id.org-url` on the routes under `/orgs/{org}`.
-6. **Render** cbox-ui's `CboxShell` from the persistent layout with `props.shell`.
-7. **Delete** the app's copied `shared-shell.css`, `app-switcher.ts`, `Shell.tsx`,
+   A page that cannot carry every level in its URL still gets a full rail as long as the
+   level's `current()` resolves the item another way; prefer the URL standard anyway.
+   A required parameter that picks a view, not a record (`{signal}`), is declared with
+   `->page($route, views: ['signal'])` so a switch keeps the page.
+6. **Phone and create** (cbox-ui 0.11): `->tabs()` for the bottom tab bar, `->creatables()`
+   for "+", `->page($route, create:, actions:)` for each list page, and `live`, `group`
+   and `description` on the environments ([pages and create](../core-concepts/shell.md#pages-and-create)).
+7. **Render** cbox-ui's `CboxShell` from the persistent layout with `props.shell`.
+8. **Delete** the app's copied `shared-shell.css`, `app-switcher.ts`, `Shell.tsx`,
    `service-marks.json` and `chrome/*`.
-8. **Test** with `InteractsWithShell`: the levels on a deep page, the active area, the
+9. **Test** with `InteractsWithShell`: the levels on a deep page, the active area, the
    switch from an entity page, and "New …".
