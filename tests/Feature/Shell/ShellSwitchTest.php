@@ -15,11 +15,6 @@ beforeEach(function (): void {
     $this->shellLevels($this->orgs, $this->projects, $this->environments);
 });
 
-function switchTo(array $select, string $from): array
-{
-    return test()->postJson('/shell/switch', ['select' => $select, 'from' => $from])->assertOk()->json();
-}
-
 it('stays on the same page when it exists in the new context', function (): void {
     expect(switchTo(['project' => 'prj_2'], '/orgs/cbox/projects/webshop/environments/production/logs'))
         ->toBe(['url' => '/orgs/cbox/projects/api/environments/staging/logs', 'resolution' => SwitchResult::SAME_PAGE]);
@@ -211,4 +206,27 @@ it('prefers select and from over the flat body, and keeps refusing what it refus
     $this->postJson('/shell/switch', ['organization' => 'org_404', 'return_to' => '/orgs/cbox'])->assertNotFound();
     $this->postJson('/shell/switch', ['organization' => 'org_2', 'return_to' => '//evil.example/orgs/cbox/settings'])
         ->assertOk()->assertJsonPath('url', '/orgs/acme/projects/storefront/environments/staging');
+});
+
+it('reads the body cbox-ui 0.11 posts: every outer level\'s current id, then the new one', function (): void {
+    // cbox-ui's switchBody: `{select: {organization: current, project: current, environment: new}, from}`,
+    // as JSON, as an Inertia form post (`select[environment]=…&from=…`) and as a palette GET link.
+    $from = '/orgs/cbox/projects/webshop/environments/production/deployments';
+    $body = ['select' => ['organization' => 'org_1', 'project' => 'prj_1', 'environment' => 'env_2'], 'from' => $from];
+
+    $this->postJson('/shell/switch', $body)->assertOk()
+        ->assertExactJson(['url' => '/orgs/cbox/projects/webshop/environments/sandbox/deployments', 'resolution' => SwitchResult::SAME_PAGE]);
+
+    $this->post('/shell/switch', $body, ['X-Inertia' => 'true'])
+        ->assertStatus(303)->assertRedirect('/orgs/cbox/projects/webshop/environments/sandbox/deployments');
+
+    $this->get('/shell/switch?'.http_build_query($body))
+        ->assertStatus(303)->assertRedirect('/orgs/cbox/projects/webshop/environments/sandbox/deployments');
+
+    // A new project with the current organization: the environment named alike is kept or the first taken.
+    expect(switchTo(['organization' => 'org_1', 'project' => 'prj_2'], $from)['url'])->toBe('/orgs/cbox/projects/api/environments/staging/deployments')
+        // Nothing changed: the same page.
+        ->and(switchTo(['organization' => 'org_1', 'project' => 'prj_1'], $from))->toBe(['url' => $from, 'resolution' => SwitchResult::SAME_PAGE])
+        // An outer id that is not the person's is still refused.
+        ->and($this->postJson('/shell/switch', ['select' => ['organization' => 'org_404', 'project' => 'prj_2'], 'from' => $from])->status())->toBe(404);
 });

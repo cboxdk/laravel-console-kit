@@ -215,6 +215,50 @@ class AssertableShell
         Assert::fail("The palette has no [{$id}] action.");
     }
 
+    /** The page's own palette action (`page.actions`, "On {page}"). */
+    public function assertPageAction(string $id, ?string $url = null): static
+    {
+        foreach ($this->list('page.actions') as $action) {
+            if (data_get($action, 'id') === $id) {
+                if ($url !== null) {
+                    Assert::assertSame($url, data_get($action, 'url'), "The page's [{$id}] action goes elsewhere.");
+                }
+
+                return $this;
+            }
+        }
+
+        Assert::fail("The page has no [{$id}] action.");
+    }
+
+    /**
+     * The phone's tab bar, in order.
+     *
+     * @param  list<string>  $areas
+     */
+    public function assertTabs(array $areas): static
+    {
+        Assert::assertSame($areas, $this->get('nav.tabs') ?? [], 'The tab bar holds other areas.');
+
+        return $this;
+    }
+
+    /** "+" and the palette can create `$key` (or, with `$expected` false, cannot). */
+    public function assertCanCreateItem(string $key, bool $expected = true): static
+    {
+        $keys = array_map(static fn (mixed $item): mixed => data_get($item, 'key'), $this->list('create.items'));
+
+        Assert::assertSame($expected, in_array($key, $keys, true), $expected ? "The shell cannot create [{$key}]." : "The shell can create [{$key}].");
+
+        return $this;
+    }
+
+    /** The creatable "+" opens on this page (`page.create`), or none with null. */
+    public function assertPageCreates(?string $key): static
+    {
+        return $this->assertPath('page.create', $key);
+    }
+
     /** @return list<mixed> */
     private function levels(): array
     {

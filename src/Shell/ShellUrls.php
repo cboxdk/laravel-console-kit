@@ -19,11 +19,16 @@ final class ShellUrls
 {
     /**
      * A relative URL for `$name`, or null when the route does not exist or a required
-     * parameter is neither given nor on the current route.
+     * parameter is neither given, nor on the current route, nor in `$context`.
+     *
+     * `$context` (route parameter => value, from the resolved context levels) fills a
+     * parameter the current page's URL omits: a page under `/projects/{project}` still
+     * links to `/{organization}/usage` when the organization is resolved another way.
      *
      * @param  array<string, string|int>  $parameters
+     * @param  array<string, string|int>  $context
      */
-    public static function route(Router $router, string $name, ?Route $current, array $parameters = []): ?string
+    public static function route(Router $router, string $name, ?Route $current, array $parameters = [], array $context = []): ?string
     {
         $route = $router->getRoutes()->getByName($name);
 
@@ -31,7 +36,7 @@ final class ShellUrls
             return null;
         }
 
-        return self::toRoute($route, self::parametersFor($route, $current, $parameters));
+        return self::toRoute($route, self::parametersFor($route, $current, $parameters, $context));
     }
 
     /**
@@ -52,12 +57,14 @@ final class ShellUrls
 
     /**
      * The target route's parameters: those the current route carries (raw, before model
-     * binding), overridden by the explicit ones, limited to what the target uses.
+     * binding), overridden by the explicit ones, limited to what the target uses. A
+     * parameter neither carries is taken from `$context` (the resolved context levels).
      *
      * @param  array<string, string|int>  $parameters
+     * @param  array<string, string|int>  $context
      * @return array<string, string|int>
      */
-    public static function parametersFor(Route $route, ?Route $current, array $parameters = []): array
+    public static function parametersFor(Route $route, ?Route $current, array $parameters = [], array $context = []): array
     {
         $names = self::parameterNames($route);
         $carried = $current instanceof Route ? self::rawParameters($current) : [];
@@ -68,6 +75,8 @@ final class ShellUrls
                 $out[$name] = $parameters[$name];
             } elseif (array_key_exists($name, $carried)) {
                 $out[$name] = $carried[$name];
+            } elseif (array_key_exists($name, $context) && $context[$name] !== '') {
+                $out[$name] = $context[$name];
             }
         }
 

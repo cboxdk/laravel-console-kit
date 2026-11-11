@@ -72,3 +72,9 @@ function inertiaVisit(): array
 {
     return ['X-Inertia' => 'true', 'Accept' => 'text/html, application/xhtml+xml'];
 }
+
+/** POST a switch as cbox-ui does (`{select, from}`) and answer the JSON result. */
+function switchTo(array $select, string $from): array
+{
+    return test()->postJson('/shell/switch', ['select' => $select, 'from' => $from])->assertOk()->json();
+}

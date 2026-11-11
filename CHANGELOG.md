@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- The cbox-ui 0.11 shell (V6 phone layout, V7 create sheet). All optional; an app that declares none of it sends the same prop as before.
+  - Environments: `ContextItem` takes `live`, `group` and `description`; `Tone` adds `Staging`, `Preview` and `Development`.
+  - `->tabs('overview', 'invoices', …)`: the phone's tab bar (`nav.tabs`, up to four area keys; an area not shown on a page is left out of the bar there).
+  - `->creatables([new ShellCreatable($key, $label, $area)], default: 'invoice')`: `shell.create`, a list or a closure over the request and the context. A default that is not a creatable is not sent.
+  - `->page($routes, create:, actions:, title:, views:)`: describes a page by route name or `Str::is()` pattern and sends `shell.page` (`title`, `route`, `create`, `actions`). `page.create` is sent only when it is one of the request's creatables. `page` is also sent, with the nav page's title, while the shell can create.
+  - `PaletteAction` takes `hint` and `create` (`route(..., hint:, create:)`, `url(..., hint:, create:)`, `->withHint()`, `->withCreate()`).
+  - `->recent(fn (Request, array $context) => list<PaletteRecord>)`: `palette.recent`, same-origin URLs only.
+  - `->helpArticles(fn (Request, ?string $topic) => list<ShellHelpArticle>)` and `->helpUnread(fn (Request) => ?int)`: `help.articles` and `help.unread`.
+- `->appCatalogUrl()` also takes a closure over the request and the context, so the switcher can ask for the page's organization. Null, or anything but a same-origin path or an `https://` URL, keeps the default.
+- View parameters: `->page($route, views: ['signal'])` or `->viewParameters('signal')` marks a required route parameter as a view of the page, not a record. A switch keeps the page and the view instead of falling back to the list.
+- `PaletteAction::resolveIn($router, $current, $context)`: `resolve()` with the context's route parameters as a fallback.
+- `FakeContextLevel::currentUsing(fn)` resolves the current item another way than from the route parameter. `AssertableShell::assertTabs()`, `assertCanCreateItem()`, `assertPageCreates()` and `assertPageAction()`.
+
+### Fixed
+- A page whose URL omits an outer level (`/projects/{project}/…`, the organization resolved from the project) got an empty rail: nav links were built only from the current route's parameters. Nav pages, palette actions, locked-page upgrade links and the account links now fill a missing parameter from the resolved context (each level's `routeParameter()` => the current item's `routeKey`). The page's own parameters still win.
+- A switch from cbox-ui, which posts the outer levels' current ids along with the new one (`select[organization]=<current>&select[project]=<new>`), was treated as an organization switch. On a page without the organization in its URL that landed on the project's home instead of the same page. The switched level is now the outermost whose id changed.
+
+Backward compatible with 0.2.x.
+
 ## v0.2.5 — 2026-11-11
 
 ### Fixed

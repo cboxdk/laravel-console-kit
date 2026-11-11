@@ -89,10 +89,22 @@ Rules:
   through `find()` and refuses it when `find()` answers null. Return only what the person
   may open, under the given ancestors.
 - **`routeKey`** is what goes in the URL (the slug). It never leaves the server.
-- **Environments are app-defined.** Set `tone` (`Tone::Production`, `Sandbox`, `Neutral`),
-  a short `label` ("default", "test data") and `testData`. The shell does not sort; return
-  items in the order the person should see. `testData: true` on the current environment
-  shows the sandbox strip.
+- **Environments are app-defined.** Set `tone` (`Tone::Production`, `Sandbox`, `Neutral`,
+  and for cbox-ui 0.11 `Staging`, `Preview`, `Development`), a short `label` ("default",
+  "test data") and `testData`. The shell does not sort; return items in the order the
+  person should see. `testData: true` on the current environment shows the sandbox strip.
+- **For the phone's environment picker** (cbox-ui 0.11) say whether an environment is
+  `live` (real customers, real money; `false` shows the "Not production" banner), the
+  `group` it is listed under in "All environments" ("Live", "Test", "Preview") and a
+  `description`, a second line ("From branch feat/quotes"):
+
+  ```php
+  new ContextItem($env->id, $env->name, $env->slug,
+      tone: Tone::Preview, live: false, group: 'Preview', description: 'From branch '.$env->branch);
+  ```
+- **A page whose URL omits this level** (the organization of `/projects/{project}`) still
+  gets the level's pages in the rail, as long as `current()` resolves the item another way
+  (from the project, say): links are filled from the resolved context.
 
 ## CreatesContextItems
 
@@ -175,5 +187,11 @@ $this->app->bind(ShellPreferenceStore::class, MyPreferences::class);
 | `->banner(fn (Request) => ?ShellBanner)` | An impersonation or notice strip; wins over the sandbox strip. |
 | `->sandboxText(string\|fn (ContextItem) => string)` | The sandbox strip's text. |
 | `->listFallback(fn (Route) => ?string)` | The list route an entity page falls back to on a switch. |
-| `->appCatalogUrl(string)` | Where the app switcher reads the catalog. |
+| `->appCatalogUrl(string\|fn (Request, array $context) => ?string)` | Where the app switcher reads the catalog, fixed or per request. |
+| `->viewParameters(string ...)` | Route parameters that pick a view, not a record, on every route: a switch keeps the page. Per page: `->page($route, views: [...])`. |
+| `->tabs(string ...)` | The phone's tab bar: up to four area keys. |
+| `->creatables(list\|fn, default:)` | What "+" and the palette can create. |
+| `->page($routes, create:, actions:, title:, views:)` | Describe a page (by name or pattern): its create target, its palette actions, its title, its view parameters. |
+| `->recent(fn (Request, array $context) => list<PaletteRecord>)` | The palette's "Recent" before anything is typed. |
+| `->helpArticles(fn (Request, ?string $topic) => list<ShellHelpArticle>)`, `->helpUnread(fn (Request) => ?int)` | Help's articles and its unread dot, from local data. |
 | `->person(fn (Request) => ?ShellPerson)` | Who the account button shows. |

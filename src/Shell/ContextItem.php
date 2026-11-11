@@ -14,6 +14,12 @@ namespace Cbox\Console\Kit\Shell;
  *
  * `tone`, `label` and `testData` are app-defined (spec §5.1a). The shell never sorts
  * items; send them in the order the person should see.
+ *
+ * For environments (cbox-ui 0.11, spec §4.5):
+ *  - `live` is the app's word on whether this is production (real customers, real money).
+ *    `false` shows the "Not production" banner. Null leaves it to `testData` and `tone`.
+ *  - `group` is the heading the item is listed under in "All environments" ("Live", "Test").
+ *  - `description` is a second line under the name ("From branch feat/quotes").
  */
 readonly class ContextItem
 {
@@ -27,11 +33,14 @@ readonly class ContextItem
         public ?Tone $tone = null,
         public ?string $label = null,
         public ?bool $testData = null,
+        public ?bool $live = null,
+        public ?string $group = null,
+        public ?string $description = null,
     ) {
         $this->routeKey = $routeKey ?? $id;
     }
 
-    /** @return array{id: string, name: string, initials?: string, tone?: string, label?: string, testData?: bool} */
+    /** @return array{id: string, name: string, initials?: string, tone?: string, label?: string, testData?: bool, live?: bool, group?: string, description?: string} */
     public function toArray(): array
     {
         $out = ['id' => $this->id, 'name' => $this->name];
@@ -50,6 +59,18 @@ readonly class ContextItem
 
         if ($this->testData !== null) {
             $out['testData'] = $this->testData;
+        }
+
+        if ($this->live !== null) {
+            $out['live'] = $this->live;
+        }
+
+        if ($this->group !== null && $this->group !== '') {
+            $out['group'] = $this->group;
+        }
+
+        if ($this->description !== null && $this->description !== '') {
+            $out['description'] = $this->description;
         }
 
         return $out;

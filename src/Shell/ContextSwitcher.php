@@ -15,14 +15,18 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
  * state: nothing is kept in the session.
  *
  * 1. The selected items are resolved through each level's `find()`; an unknown id is
- *    refused. Levels above the switched one keep the current selection. Levels below it
+ *    refused. The switched level is the outermost one whose selected id differs from the
+ *    current one: cbox-ui sends the ancestors' current ids along with the new one. Levels
+ *    above the switched one keep the current selection. Levels below it
  *    keep an item with the same name if the new parent has one, else its first item
  *    ("Production" stays "Production" when switching project).
  * 2. When the page the switch came from carries the switched level in its URL and has no
  *    other required parameters, it is rebuilt with the new slugs: the same page in the new
  *    context, with its optional parameters (`{tab?}`) and its query string.
  * 3. A page with a required parameter that is not a context level shows one record. It falls
- *    back to that area's list, so an entity id is never carried into another context.
+ *    back to that area's list, so an entity id is never carried into another context. A
+ *    parameter the app declared a view (`->page($route, views: ['signal'])`,
+ *    `->viewParameters('signal')`) is not a record: it is carried over like `{tab?}`.
  * 4. Otherwise the person lands on the deepest selected item's own start page.
  */
 class ContextSwitcher
@@ -40,7 +44,7 @@ class ContextSwitcher
     public function resolve(Request $request, string $from, array $select): SwitchResult
     {
         $levels = $this->shell->contextLevels();
-        $first = null;
+        $indexes = [];
 
         foreach (array_keys($select) as $key) {
             $index = $this->shell->levelIndex($key);
@@ -49,10 +53,10 @@ class ContextSwitcher
                 throw ContextSwitchRefused::because("Unknown context level [{$key}].");
             }
 
-            $first = $first === null ? $index : min($first, $index);
+            $indexes[$key] = $index;
         }
 
-        if ($first === null) {
+        if ($indexes === []) {
             throw ContextSwitchRefused::because('Nothing to switch to.');
         }
 
@@ -60,6 +64,12 @@ class ContextSwitcher
         $route = $fromRequest?->route();
         $route = $route instanceof Route ? $route : null;
         $current = $fromRequest instanceof Request ? $this->shell->resolveContext($fromRequest)->items : [];
+
+        // The switched level: the outermost whose selected id is not the current one. A
+        // selection equal to the current context switches its deepest level (a no-op that
+        // lands on the same page).
+        $changed = array_filter($indexes, static fn (int $index, string $key): bool => ($current[$index] ?? null)?->id !== $select[$key], ARRAY_FILTER_USE_BOTH);
+        $first = $changed === [] ? max($indexes) : min($changed);
 
         $items = [];
 
@@ -113,9 +123,9 @@ class ContextSwitcher
             $contextParameters[$level->routeParameter()] = isset($items[$index]) ? $items[$index]->routeKey : null;
         }
 
-        // Only a required parameter that is not a context level names a record; an
-        // optional one (`{tab?}`) is a view of the same page and is carried over.
-        $entityPage = array_diff(ShellUrls::requiredParameters($route), array_keys($contextParameters)) !== [];
+        // Only a required parameter that is not a context level, nor declared a view, names a
+        // record; an optional one (`{tab?}`) or a view (`{signal}`) is carried over.
+        $entityPage = array_diff(ShellUrls::requiredParameters($route), array_keys($contextParameters), $this->shell->viewParametersFor($route)) !== [];
 
         if (! $entityPage) {
             $carried = array_diff_key(ShellUrls::rawParameters($route), $contextParameters);

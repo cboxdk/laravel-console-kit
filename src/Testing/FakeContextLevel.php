@@ -44,6 +44,9 @@ class FakeContextLevel implements ContextLevel, CreatesContextItems
     /** @var (Closure(list<ContextItem>): string)|null */
     private ?Closure $allUrl = null;
 
+    /** @var (Closure(Request, list<ContextItem>, self): ?ContextItem)|null */
+    private ?Closure $current = null;
+
     public function __construct(
         private readonly string $key,
         private readonly string $label,
@@ -93,8 +96,26 @@ class FakeContextLevel implements ContextLevel, CreatesContextItems
         return $this->routeParameter;
     }
 
+    /**
+     * Resolve the current item another way than from this level's route parameter, as an app
+     * does when a page's URL omits the level (the organization of `/projects/{project}`).
+     * The resolver gets the request, the ancestors and this level; null restores the default.
+     *
+     * @param  (Closure(Request, list<ContextItem>, self): ?ContextItem)|null  $resolver
+     */
+    public function currentUsing(?Closure $resolver): static
+    {
+        $this->current = $resolver;
+
+        return $this;
+    }
+
     public function current(Request $request, array $ancestors): ?ContextItem
     {
+        if ($this->current instanceof Closure) {
+            return ($this->current)($request, $ancestors, $this);
+        }
+
         $route = $request->route();
 
         if (! $route instanceof Route) {
